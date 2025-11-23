@@ -4,7 +4,7 @@ import { AudioClassifier, FilesetResolver } from "./task-audio/audio_bundle.mjs"
 // 2. p5.jsのスケッチ全体を一つの関数オブジェクトとして定義します (インスタンスモード)
 const sketch = (p) => {
 
-       // ★ iOS / モバイルかどうか判定
+    // ★ iOS / モバイルかどうか判定
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
     // --- スケッチ内で使う変数を定義 ---
@@ -18,10 +18,6 @@ const sketch = (p) => {
     const historyLength = 50;
     const startBin = 10;
     const noiseThreshold = 100;
-
-    const lowGain = 1;
-    const midGain = 1.;
-    const highGain = 1.;
 
     const textBlockX = 0;
     const textBlockY = 50;
@@ -73,7 +69,7 @@ const sketch = (p) => {
 
     const allTargetCategories = Object.values(CATEGORIES_HIERARCHY).flat();
 
-    // ★★★ 読み込んだ画像を保持するオブジェクトを追加 ★★★
+    // 画像
     let iconImages = {};
 
     let categoryData = {};
@@ -84,10 +80,10 @@ const sketch = (p) => {
         "Thunderstorm":2,
     };
 
+    // パーティクル関連
     let particles = [];
     const numParticles = isMobile ? 40 : 80;      // iPad では半分
-    const particleBounds = isMobile ? 3000 : 5000; // 範囲も少し狭く
-
+    const particleBounds = isMobile ? 3000 : 5000;
 
     let bassLevel = 0;
     let smoothedBassLevel = 0;
@@ -95,7 +91,7 @@ const sketch = (p) => {
     let smoothedWaveform = [];
     const waveformSmoothing = 0.1;
     
-
+    // ★ audioClassifier はここで宣言
     let audioClassifier;
     let statusMessage = "Initializing...";
     let isPlaying = false;
@@ -123,39 +119,29 @@ const sketch = (p) => {
         soundFile = p.loadSound('music/beat_ambient.mp3');
         birdModel = p.loadModel('bird_blender.obj', true);
 
-        // ★★★ カテゴリに対応する画像をすべて読み込む ★★★
+        // カテゴリに対応する画像をすべて読み込む
         allTargetCategories.forEach(categoryName => {
             const path = `icons/${categoryName}.png`;
-            iconImages[categoryName] = p.loadImage(path,
+            iconImages[categoryName] = p.loadImage(
+                path,
                 () => console.log(`Successfully loaded: ${path}`),
                 () => console.error(`Failed to load: ${path}`)
             );
         });
     };
 
-    p.setup = async () => {
-        const loadFontAsPromise = (path) => {
-            return new Promise((resolve, reject) => {
-                p.loadFont(path, resolve, reject);
-            });
-        };
-
-        try {
-            myFont = await loadFontAsPromise('Roboto-Regular.ttf');
-        } catch (error) {
-            console.error("フォントの読み込みに失敗しました:", error);
-            p.noLoop();
-            return;
-        }
-
+    // ★ async をやめて、失敗しても noLoop しないようにする
+    p.setup = () => {
         p.createCanvas(p.windowWidth, p.windowHeight, p.WEBGL);
 
-        // ★ 高解像度端末で重くなるので 1 に固定
+        // 高解像度端末で重くなるので 1 に固定
         p.pixelDensity(1);
 
-        // camEyeX = -1600;
-        // camEyeY = -300;
-        // camEyeZ = 300;
+        if (myFont) {
+            p.textFont(myFont);
+        } else {
+            console.warn("myFont が読み込めなかったのでデフォルトフォントを使用します");
+        }
 
         camEyeX = -5000;
         camEyeY = 100;
@@ -173,72 +159,41 @@ const sketch = (p) => {
         });
 
         textLayer = p.createGraphics(p.windowWidth, p.windowHeight);
-        textLayer.textFont(myFont);
+        if (myFont) textLayer.textFont(myFont);
         textLayer.colorMode(p.HSB, 360, 100, 100, 1.0);
 
         for (let i = 0; i < numParticles; i++) {
             particles.push(new Particle());
         }
 
-        await setupMediaPipe();
-        
-        if (audioClassifier) {
-            const audioCtx = p.getAudioContext();
-
-             // ★ iPad などでは FFT 解像度を落として負荷軽減
-            const fftBins = isMobile ? 256 : 512;
-            fft = new p5.FFT(0.3, fftBins);
-
-
-            scriptNode = audioCtx.createScriptProcessor(16384, 1, 1);
-            scriptNode.onaudioprocess = (e) => {
-                if (!isPlaying || !audioClassifier || audioCtx.state !== 'running') return;
-                const inputData = e.inputBuffer.getChannelData(0);
-                const results = audioClassifier.classify(inputData, audioCtx.sampleRate);
-                
-                for (const name in categoryData) {
-                    categoryData[name].targetScore = 0;
-                }
-
-                musicScoreData.targetScore = 0;
-                
-                if (results?.length > 0) {
-                    const classifications = results[0].classifications[0].categories;
-                    // classifications
-                    // .sort((a,b) => b.score - a.score)
-                    // .slice(0, 20)
-                    // .forEach(c => console.log(c.displayName || c.categoryName, c.score.toFixed(3)));
-                    // if (classifications.length > 0) {
-                    //     console.table(classifications.slice(0, 50));
-                    // }
-                    classifications.forEach(category => {
-                        const name = category.displayName || category.categoryName;
-                        if (categoryData.hasOwnProperty(name)) {
-                            categoryData[name].targetScore = category.score;
-                        }
-                        // 「Music」カテゴリだったら、専用変数にスコアを格納
-                        if (name === "Music") {
-                            musicScoreData.targetScore = category.score;
-                        }
-                    });
-                }
-            };
-
-            soundFile.connect(scriptNode);
-            scriptNode.connect(p5.soundOut.audiocontext.destination);
-        }
+        // MediaPipe のロードは裏で進める
+        setupMediaPipe();
 
         for (const majorCategory in CATEGORIES_HIERARCHY) {
             groupCooldowns[majorCategory] = 0;
         }
 
         p.noCursor();
+        statusMessage = "Tap / Click to Play";
     };
 
 
     p.draw = () => {
         p.background(0);
-        // p.background("#002853");
+
+        // ★ デバッグ用：必ず左上に赤丸 + status 表示
+        p.push();
+        p.resetMatrix(); // 3D 変換を解除して 2D 座標に戻す
+        p.noStroke();
+        p.fill(0, 100, 100);      // 赤系 (HSB)
+        p.circle(20, 20, 15);     // ← これが見えたら draw 自体は動いている
+
+        p.fill(0, 0, 100);
+        p.textSize(14);
+        p.textAlign(p.LEFT, p.TOP);
+        p.text(statusMessage, 40, 10);
+        p.pop();
+        // ★ ここまでデバッグ表示
 
         for (const majorCategory in groupCooldowns) {
             if (groupCooldowns[majorCategory] > 0) {
@@ -253,33 +208,34 @@ const sketch = (p) => {
             p.background(0);
             p.fill(255);
             p.textAlign(p.CENTER, p.CENTER);
-            p.text("フォント読み込みに失敗したため、3D表示を停止しました。\nブラウザのコンソールとネットワークタブを確認してください。", p.width / 2, p.height / 2);
+            p.text("3D 表示がサポートされていません。", p.width / 2, p.height / 2);
             p.pop();
             return;
         }
         
-        // drawCameraHelper();
-
-        // ★ モバイルではカメラ固定にして軽くする
+        // モバイルではカメラ固定にして軽くする
         if (!isMobile) {
             p.orbitControl();
         }
 
         const cam_mode = 0;
-        if(cam_mode == 0){
+        if (cam_mode == 0) {
             p.camera(camEyeX, camEyeY, camEyeZ, 0, 0, 0, 0, 1, 0);
-        }else if(cam_mode == 1){
-            p.camera(camEyeX + p.sin(p.frameCount*0.005)*200,
-                    camEyeY + p.sin(p.frameCount*0.001)*1000,
-                    camEyeZ + p.sin(p.frameCount*0.001)*1000,
-                    0, 0, 0, 0, 1, 0);
+        } else if (cam_mode == 1) {
+            p.camera(
+                camEyeX + p.sin(p.frameCount*0.005)*200,
+                camEyeY + p.sin(p.frameCount*0.001)*1000,
+                camEyeZ + p.sin(p.frameCount*0.001)*1000,
+                0, 0, 0, 0, 1, 0
+            );
         }
         
         if (isPlaying && fft) {
             let spectrum = fft.analyze();
-            bassLevel = p.map(fft.getEnergy("bass"), 0, 255, 0, 1) + p.map(fft.getEnergy("mid"), 0, 255, 0, 1) + p.map(fft.getEnergy("treble"), 0, 255, 0, 1);
-            //スペクトログラムの描画
-            // drawSpectrogram(spectrum);
+            bassLevel =
+                p.map(fft.getEnergy("bass"),   0, 255, 0, 1) +
+                p.map(fft.getEnergy("mid"),    0, 255, 0, 1) +
+                p.map(fft.getEnergy("treble"), 0, 255, 0, 1);
         } else {
             bassLevel *= 0.95;
         }
@@ -319,13 +275,10 @@ const sketch = (p) => {
             }
         }
         
-        const activeCategoryCount = majorScores.filter(score => score > ACTIVE_CATEGORY_THRESHOLD).length;
+        const activeCategoryCount =
+            majorScores.filter(score => score > ACTIVE_CATEGORY_THRESHOLD).length;
 
-        if (activeCategoryCount >= MIN_ACTIVE_CATEGORIES) {
-            isBalancedMode = true;
-        } else {
-            isBalancedMode = false;
-        }
+        isBalancedMode = activeCategoryCount >= MIN_ACTIVE_CATEGORIES;
 
         if (totalScore > 0) {
             targetHue = weightedHue / totalScore;
@@ -343,8 +296,6 @@ const sketch = (p) => {
 
         drawParticles();
         drawTextOverlay();
-        
-        // ★★★ テキスト描画関数を画像描画関数に変更 ★★★
         drawFlowingImages();
         
         p.push();
@@ -353,7 +304,7 @@ const sketch = (p) => {
         p.image(textLayer, 0, 0);
         p.pop();
 
-         p.push();
+        p.push();
         p.translate(0.2000,0);
         p.rotateX(p.frameCount*0.0004);
         p.rotateY(p.frameCount*0.0002);
@@ -364,157 +315,157 @@ const sketch = (p) => {
         p.scale(-1, 1, 1);
 
         if (!isMobile) {
-            // PC 向け：ディティール高め
             p.sphere(6000);
         } else {
-            // iPad 向け：ディティールを落とすか、簡単な円に差し替え
-            p.sphere(6000, 10, 10); // もしくはコメントアウトしても OK
+            p.sphere(6000, 10, 10);
         }
 
         p.pop();
     };
 
-    function drawCameraHelper() {
-        p.push();
-        p.resetMatrix();
-        p.fill(255);
-        p.textSize(16);
-        p.textAlign(p.LEFT, p.TOP);
-        let info = `Camera Position (eye):\n` +
-                `X: ${Math.round(camEyeX)} (A/D keys)\n` +
-                `Y: ${Math.round(camEyeY)} (W/S keys)\n` +
-                `Z: ${Math.round(camEyeZ)} (Q/E keys)`;
-        p.text(info, 10, 10);
-        console.log(`Camera Position (eye):\n` +
-                `X: ${Math.round(camEyeX)} (A/D keys)\n` +
-                `Y: ${Math.round(camEyeY)} (W/S keys)\n` +
-                `Z: ${Math.round(camEyeZ)} (Q/E keys)`);
-        p.pop();
+    // --- MediaPipe セットアップ（audioClassifier ここで生成）---
+
+    async function setupMediaPipe() {
+        try {
+            statusMessage = "Loading Audio Model...";
+            const audioTasks = await FilesetResolver.forAudioTasks("./task-audio/wasm");
+            audioClassifier = await AudioClassifier.createFromOptions(audioTasks, {
+                baseOptions: {
+                    modelAssetPath: "./models/yamnet.tflite",
+                    delegate: "CPU"
+                },
+                maxResults: -1,
+                scoreThreshold: 0.0001
+            });
+            console.log("audioClassifier ready", audioClassifier);
+
+            const audioCtx = p.getAudioContext();
+
+            const fftBins = isMobile ? 256 : 512;
+            fft = new p5.FFT(0.3, fftBins);
+            fft.setInput(soundFile);   // ★ ここで soundFile を FFT に接続
+
+            scriptNode = audioCtx.createScriptProcessor(16384, 1, 1);
+            scriptNode.onaudioprocess = (e) => {
+                if (!isPlaying || !audioClassifier || audioCtx.state !== 'running') return;
+                const inputData = e.inputBuffer.getChannelData(0);
+                const results = audioClassifier.classify(inputData, audioCtx.sampleRate);
+                
+                for (const name in categoryData) {
+                    categoryData[name].targetScore = 0;
+                }
+
+                musicScoreData.targetScore = 0;
+                
+                if (results?.length > 0) {
+                    const classifications = results[0].classifications[0].categories;
+                    classifications.forEach(category => {
+                        const name = category.displayName || category.categoryName;
+                        if (categoryData.hasOwnProperty(name)) {
+                            categoryData[name].targetScore = category.score;
+                        }
+                        if (name === "Music") {
+                            musicScoreData.targetScore = category.score;
+                        }
+                    });
+                }
+            };
+
+            soundFile.connect(scriptNode);
+            scriptNode.connect(p5.soundOut.audiocontext.destination);
+
+            statusMessage = "Tap / Click to Play";
+
+        } catch (e) {
+            console.error("MediaPipe setup failed:", e);
+            statusMessage = `Error: Could not load model. ${e.message}`;
+        }
     }
-    
-    p.keyPressed = async () => {
-        const moveSpeed = 50;
-        if (p.key === 'a') camEyeX -= moveSpeed;
-        else if (p.key === 'd') camEyeX += moveSpeed;
-        else if (p.key === 'w') camEyeY -= moveSpeed;
-        else if (p.key === 's') camEyeY += moveSpeed;
-        else if (p.key === 'q') camEyeZ -= moveSpeed;
-        else if (p.key === 'e') camEyeZ += moveSpeed;
 
-        if (p.keyCode === 32) {
-            togglePlay();
-        }
-    };
-    
-    p.mousePressed = () => {
-        togglePlay();
-    };
+    // --- 波形ライン（3D のまま） ---
 
-    // ★ iOS / iPad 用に touchStarted も追加
-    p.touchStarted = () => {
-        togglePlay();
-        return false; // デフォルトのスクロール等を防ぐ
-    };
+    function drawWaveformLine() {
+        if (isPlaying && fft) {
+            let waveform = fft.waveform();
 
-    function togglePlay() {
-        if (p.getAudioContext().state !== 'running') {
-            p.getAudioContext().resume();
-        }
+            if (smoothedWaveform.length !== waveform.length) {
+                smoothedWaveform = Array.from(waveform);
+            }
+            for (let i = 0; i < waveform.length; i++) {
+                smoothedWaveform[i] = p.lerp(smoothedWaveform[i], waveform[i], waveformSmoothing);
+            }
+            
+            p.push();
+            p.translate(0,300,-500);
+            p.rotateY(p.PI/2);
 
-        if (soundFile.isPlaying()) {
-            soundFile.pause();
-            isPlaying = false;
-            statusMessage = "Paused. Press Spacebar to play.";
-        } else {
-            soundFile.loop(); 
-            isPlaying = true;
-            statusMessage = "Playing... Press Spacebar to pause.";
+            const lineAlpha = p.map(smoothedBassLevel, 0, 1.5, 0.1, 5.0, true);
+            const weight = p.map(smoothedBassLevel, 0, 1.5, 0.5, 5, true);
+
+            p.strokeWeight(weight);
+            p.noFill();
+            p.stroke(currentHue, 80, 100, lineAlpha);
+
+            for (let i = 0; i < waveform.length; i++) {
+                let x = p.map(i, 0, waveform.length, -p.width * 4, p.width * 4);
+                let y = p.map(smoothedWaveform[i], -0.5, 0.5, -4000, 4000);
+                if(i%2 == 0){
+                    p.point(x, y, 0);
+                    p.point(x, -y, 0);
+                }
+            }
+            p.pop();
         }
     }
 
-
-    p.windowResized = () => {
-        p.resizeCanvas(p.windowWidth, p.windowHeight);
-        textLayer.resizeCanvas(p.windowWidth, p.windowHeight);
-        textLayer.textFont(myFont);
-        textLayer.colorMode(p.HSB, 360, 100, 100, 1.0);
-    };
+    // --- 以下、Flowing Images / Particles / TextOverlay は元のまま ---
 
     function drawFlowingImages() {
-
-        // 後ろからループすることで、安全に要素を削除できます
         for (let i = flowingIconsHistory.length - 1; i >= 0; i--) {
             let iconInfo = flowingIconsHistory[i];
 
-            // 1. 位置を更新する (右に流す)
-            iconInfo.pos.z += 8.5; // 流れるスピード
-            
-            iconInfo.pos.y = iconInfo.default_y + p.sin((p.frameCount + iconInfo.phase)*0.0025) * iconInfo.move_range;
-            
-            // 2. 寿命を減らす
+            iconInfo.pos.z += 8.5;
+            iconInfo.pos.y = iconInfo.default_y +
+                p.sin((p.frameCount + iconInfo.phase)*0.0025) * iconInfo.move_range;
             iconInfo.lifespan--;
 
-            // 3. 画像を描画する
             p.push();
             p.translate(iconInfo.pos.x, iconInfo.pos.y, iconInfo.pos.z);
-            
-            // カメラの方を向くように回転
             p.rotateY(-p.PI / 2);
 
             const img = iconImages[iconInfo.name];
             p.rectMode(p.CENTER);
-            if (img) { // 画像が正しく読み込まれているか確認
-                const hue = CATEGORY_COLORS[iconInfo.majorCategory];
-                const alpha = p.map(iconInfo.lifespan, 0, 100, 0, 1.0, true); // 最後はフェードアウト
-                
-                // tint()で画像に色と透明度を適用
-                // p.tint(hue, 100, 120, alpha); // アイコン自体は白で表示
-                p.tint(0, 0, 300, alpha); // アイコン自体は白で表示
-                
-                p.imageMode(p.CENTER); // 画像の中心を座標に合わせる
-                // p.image(img, 0, 0, iconInfo.size + smoothedBassLevel*50, iconInfo.size + smoothedBassLevel*50);
+            if (img) {
+                const alpha = p.map(iconInfo.lifespan, 0, 100, 0, 1.0, true);
+                p.tint(0, 0, 300, alpha);
+                p.imageMode(p.CENTER);
                 p.image(img, 0, 0, iconInfo.size, iconInfo.size);
-                p.noTint(); // 他の描画に影響が出ないようにtintをリセット
+                p.noTint();
 
-                // 四角い枠の描画
                 p.noFill();
-                p.stroke(0, 0, 100, alpha); // 枠も白で表示
-                // p.rect(0, 0, iconInfo.size + smoothedBassLevel*50, iconInfo.size + smoothedBassLevel*50);
+                p.stroke(0, 0, 100, alpha);
                 p.rect(0, 0, iconInfo.size, iconInfo.size);
             }
             p.pop();
 
-            // 4. 寿命が尽きたら配列から削除する
             if (iconInfo.lifespan < 0) {
                 flowingIconsHistory.splice(i, 1);
             }
         }
 
-        // アイコン同士を線で結ぶ距離のしきい値
         const connectDistance = 100; 
         p.strokeWeight(1);
 
-        // すべてのアイコンのペアをチェックするための二重ループ
         for (let i = 0; i < flowingIconsHistory.length; i++) {
             for (let j = i + 1; j < flowingIconsHistory.length; j++) {
-                
                 let iconA = flowingIconsHistory[i];
                 let iconB = flowingIconsHistory[j];
 
-                // 1. 同じメジャーカテゴリに属しているかチェック
                 if (iconA.majorCategory === iconB.majorCategory) {
-                    
-                    // 2. 2つのアイコン間の距離を計算
                     let distance = iconA.pos.dist(iconB.pos);
-
-                    // 3. 距離がしきい値より近いかチェック
                     if (distance < connectDistance) {
-                        
-                        // 4. 線を描画（距離が近いほど不透明にする）
-                        const alpha = p.map(distance, 0, connectDistance, 1.0, .1); // 透明度を距離に応じて変化させる
-                        const hue = CATEGORY_COLORS[iconA.majorCategory]; // カテゴリの色を取得
-                        
-                        p.stroke(0, 0, 250, alpha); // カテゴリの色で線を描画
+                        const alpha = p.map(distance, 0, connectDistance, 1.0, .1);
+                        p.stroke(0, 0, 250, alpha);
                         p.line(
                             iconA.pos.x, iconA.pos.y, iconA.pos.z,
                             iconB.pos.x, iconB.pos.y, iconB.pos.z
@@ -523,13 +474,9 @@ const sketch = (p) => {
                 }
             }
         }
-
     }
 
     function drawParticles() {
-        const connectDistance = 200;
-        const minDistance = 20;
-
         const flockingDistance = 300;
         for (let p1 of particles) {
             if (p1.species === "Animalia") {
@@ -571,17 +518,14 @@ const sketch = (p) => {
             particle.update();
         }
     }
-    
+
     function drawTextOverlay() {
         textLayer.clear();
         textLayer.push();
         textLayer.translate(textBlockX, textBlockY);
 
-        // ① "Music" カテゴリの現在の生スコアを専用変数から取得
         const musicScore = musicScoreData.targetScore;
-
-        // ② スコアから乗数を計算（1.0が通常時）
-        const musicScoreBoost = 10.0; // ← Musicスコアの増幅度合いを調整
+        const musicScoreBoost = 10.0;
         const musicMultiplier = 1.0 + (musicScore * musicScoreBoost);
 
         const numColumns = Object.keys(CATEGORIES_HIERARCHY).length;
@@ -614,9 +558,7 @@ const sketch = (p) => {
                     boost = SCORE_BOOST * SPECIAL_BOOSTS[minorCategoryName];
                 }
 
-                // 現在処理しているグループが "Music" の場合だけ musicMultiplier を使い、それ以外は 1.0 (影響なし) を使う
                 const finalMultiplier = (majorCategory === "Music") ? musicMultiplier : 1.0;
-
                 const targetWithBoost = data.targetScore * boost * finalMultiplier;
 
                 if (targetWithBoost > data.currentScore) {
@@ -628,7 +570,9 @@ const sketch = (p) => {
                 }
 
                 const barX = currentColumnX + labelWidth;
-                const displayScore = p.map(data.currentScore, 0, scoreDisplayMax, 0, 1, true);
+                const displayScore = p.map(
+                    data.currentScore, 0, scoreDisplayMax, 0, 1, true
+                );
                 const barWidth = displayScore * barMaxWidth;
                 
                 textLayer.fill(0, 0, 100, 0.2);
@@ -638,30 +582,24 @@ const sketch = (p) => {
                 textLayer.fill(hue, 80, 95);
                 textLayer.rect(barX, y - barHeight / 2, barWidth, barHeight, 5);
 
-                // アイコンを出力する閾値を設定
                 const detectionThreshold = 0.3; 
-
-                // 閾値のX座標を計算
                 const thresholdX = barX + (detectionThreshold * barMaxWidth);
 
-                // 赤い線を引く
-                textLayer.stroke(0, 100, 100); // HSBモードなので赤色は (0, 100, 100)
-                textLayer.strokeWeight(2); // 線の太さ
+                textLayer.stroke(0, 100, 100);
+                textLayer.strokeWeight(2);
                 textLayer.line(thresholdX, y - barHeight / 2, thresholdX, y + barHeight / 2);
-                textLayer.noStroke(); // 他の描画に影響しないようにstrokeをリセット
+                textLayer.noStroke();
 
                 textLayer.fill(255);
                 textLayer.textSize(labelSize);
                 textLayer.textAlign(p.LEFT, p.CENTER);
                 textLayer.text(data.displayName, currentColumnX, y);
 
-                
-                // ★★★ スコアがしきい値を超えたら、新しい「アイコン情報」オブジェクトを生成 ★★★
                 if (displayScore > detectionThreshold && groupCooldowns[majorCategory] === 0) {
                     const lastIcon = flowingIconsHistory[flowingIconsHistory.length - 1];
                     if (!lastIcon || lastIcon.name !== minorCategoryName) {
                         let def_y = p.random(-1000, 1000);
-                        const newIconInfo = { // newText から newIconInfo に名称変更
+                        const newIconInfo = {
                             name: minorCategoryName,
                             majorCategory: majorCategory,
                             default_y: def_y,
@@ -675,7 +613,6 @@ const sketch = (p) => {
                             lifespan: 400,
                             size: p.random(50, 150)
                         };
-                        // ★★★ アイコン履歴配列に追加 ★★★
                         flowingIconsHistory.push(newIconInfo);
                         groupCooldowns[majorCategory] = 30;
                     }
@@ -688,123 +625,56 @@ const sketch = (p) => {
         textLayer.pop();
     }
 
-    async function setupMediaPipe() {
-        try {
-            statusMessage = "Loading Audio Model...";
-            const audioTasks = await FilesetResolver.forAudioTasks("./task-audio/wasm");
-            audioClassifier = await AudioClassifier.createFromOptions(audioTasks, {
-                baseOptions: {
-                    modelAssetPath: "./models/yamnet.tflite",
-                    delegate: "CPU"
-                },
-                 maxResults: -1, // ← ここを -1 に変更
-                scoreThreshold: 0.0001
-            });
-            console.log(audioClassifier);
-            statusMessage = "Press Spacebar to Play";
-        } catch (e) {
-            console.error("MediaPipe setup failed:", e);
-            statusMessage = `Error: Could not load model. ${e.message}`;
+    // --- 入力系 ---
+
+    p.keyPressed = () => {
+        const moveSpeed = 50;
+        if (p.key === 'a') camEyeX -= moveSpeed;
+        else if (p.key === 'd') camEyeX += moveSpeed;
+        else if (p.key === 'w') camEyeY -= moveSpeed;
+        else if (p.key === 's') camEyeY += moveSpeed;
+        else if (p.key === 'q') camEyeZ -= moveSpeed;
+        else if (p.key === 'e') camEyeZ += moveSpeed;
+
+        if (p.keyCode === 32) {
+            togglePlay();
         }
-    }
-
-    function drawSpectrogram(spectrum) {
-        spectrumHistory.push(spectrum);
-        if (spectrumHistory.length > historyLength) {
-            spectrumHistory.splice(0, 1);
-        }
-        p.push();
-        p.translate(-1500, 0, 0);
-        p.rotateZ(p.PI * 0.8);
-        p.rotateY(p.PI / 2);
-        p.rotateZ(p.PI);
-        p.noStroke();
-
-        for (let i = 0; i < spectrumHistory.length; i++) {
-            p.beginShape(p.TRIANGLE_STRIP);
-            for (let j = startBin; j < spectrumHistory[i].length; j += 8) {
-                let x = p.map(i, 0, spectrumHistory.length - 1, 3000, -3000);
-                let h = p.map(spectrumHistory[i][j], noiseThreshold, 255, 0, -500, true);
-                let z = p.map(p.log(j), p.log(startBin), p.log(spectrumHistory[i].length), 900, -1400);
-                let hue = p.map(spectrumHistory[i][j], noiseThreshold, 255, 240, 0);
-                let alpha = p.map(i, 0, spectrumHistory.length, 0.5, 3.0, true);
-                p.fill(hue, 100, 120, alpha);
-                p.vertex(x, 0, z);
-                p.vertex(x, h, z);
-            }
-            p.endShape();
-        }
-        p.pop();
-
-        const sampleRate = 44100;
-        const binWidth = sampleRate / fft.bins / 2;
-        const labelsToShow = [100, 200, 500, 1000, 2000, 4000, 8000, 16000];
-        
-        p.textFont(myFont);
-        p.textSize(20);
-        p.fill(255, 0.7);
-        p.textAlign(p.CENTER, p.CENTER);
-
-        const i = spectrumHistory.length - 1;
-        const x = p.map(i, 0, spectrumHistory.length - 1, p.width / 2, -p.width / 0.2);
-
-        labelsToShow.forEach(hz => {
-            const j = p.round(hz / binWidth);
-            if (j >= startBin && j < fft.bins) {
-                let z = p.map(p.log(j), p.log(startBin), p.log(fft.bins), 500, -1000);
-                p.push();
-                p.translate(x - 200, 0, z);
-                const cam = p._renderer.camera;
-                if (cam) {
-                    p.rotateZ(-p.PI);
-                    p.rotateY(-p.PI/2);
-                    p.rotateZ(-p.PI*0.8);
-                    p.rotateY(-cam.pan);
-                    p.rotateX(-cam.tilt);
-                }
-                p.rotateX(p.PI/2);
-                let label = `${hz} `;
-                p.textSize(50);
-                p.text(label, 0, 0);
-                p.pop();
-            }
-        });
-    }
-
-    function drawWaveformLine() {
-        if (isPlaying && fft) {
-            let waveform = fft.waveform();
-
-            if (smoothedWaveform.length !== waveform.length) {
-                smoothedWaveform = Array.from(waveform);
-            }
-            for (let i = 0; i < waveform.length; i++) {
-                smoothedWaveform[i] = p.lerp(smoothedWaveform[i], waveform[i], waveformSmoothing);
-            }
-            
-            p.push();
-            p.translate(0,300,-500);
-            p.rotateY(p.PI/2);
-
-            const lineAlpha = p.map(smoothedBassLevel, 0, 1.5, 0.1, 5.0, true);
-            const weight = p.map(smoothedBassLevel, 0, 1.5, 0.5, 5, true);
-
-            p.strokeWeight(weight);
-            p.noFill();
-            p.stroke(currentHue, 80, 100, lineAlpha);
-
-            for (let i = 0; i < waveform.length; i++) {
-                let x = p.map(i, 0, waveform.length, -p.width * 4, p.width * 4);
-                let y = p.map(smoothedWaveform[i], -0.5, 0.5, -4000, 4000);
-                if(i%2 == 0){
-                    p.point(x, y, 0);
-                    p.point(x, -y, 0);
-                }
-            }
-            p.pop();
-        }
-    }
+    };
     
+    p.mousePressed = () => {
+        togglePlay();
+    };
+
+    p.touchStarted = () => {
+        togglePlay();
+        return false;
+    };
+
+    function togglePlay() {
+        if (p.getAudioContext().state !== 'running') {
+            p.getAudioContext().resume();
+        }
+
+        if (soundFile.isPlaying()) {
+            soundFile.pause();
+            isPlaying = false;
+            statusMessage = "Paused. Tap / Click to play.";
+        } else {
+            soundFile.loop(); 
+            isPlaying = true;
+            statusMessage = "Playing... Tap / Click to pause.";
+        }
+    }
+
+    p.windowResized = () => {
+        p.resizeCanvas(p.windowWidth, p.windowHeight);
+        textLayer.resizeCanvas(p.windowWidth, p.windowHeight);
+        if (myFont) textLayer.textFont(myFont);
+        textLayer.colorMode(p.HSB, 360, 100, 100, 1.0);
+    };
+
+    // --- Particle クラスは元のまま ---
+
     class Particle {
         constructor() {
             this.individualHue = 0;
@@ -825,15 +695,27 @@ const sketch = (p) => {
                 radius * Math.cos(angle1)
             );
 
-            this.vel = p.createVector(p.random(-0.5, 0.5), p.random(-0.5, 0.5), p.random(-0.5, 0.5));
+            this.vel = p.createVector(
+                p.random(-0.5, 0.5),
+                p.random(-0.5, 0.5),
+                p.random(-0.5, 0.5)
+            );
             this.baseVel = this.vel.copy();
             this.size = p.random(1, 5);
             this.lifespan = p.random(300, 600);
             this.maxLifespan = this.lifespan;
             this.hueOffset = p.random(-15, 15);
             this.shapeType = p.floor(p.random(1)); 
-            this.rotation = p.createVector(p.random(p.TWO_PI), p.random(p.TWO_PI), p.random(p.TWO_PI));
-            this.rotationSpeed = p.createVector(p.random(-0.01, 0.01), p.random(-0.01, 0.01), p.random(-0.01, 0.01));
+            this.rotation = p.createVector(
+                p.random(p.TWO_PI),
+                p.random(p.TWO_PI),
+                p.random(p.TWO_PI)
+            );
+            this.rotationSpeed = p.createVector(
+                p.random(-0.01, 0.01),
+                p.random(-0.01, 0.01),
+                p.random(-0.01, 0.01)
+            );
 
             if (activeHues && activeHues.length > 0) {
                 this.individualHue = p.random(activeHues);
@@ -844,7 +726,9 @@ const sketch = (p) => {
             this.displayHue = (this.pos.mag() * 0.1) % 360;
 
             const activeMajorCategories = Object.keys(CATEGORIES_HIERARCHY).filter(majorCat => {
-                return CATEGORIES_HIERARCHY[majorCat].some(minorCat => categoryData[minorCat]?.currentScore > 0.1);
+                return CATEGORIES_HIERARCHY[majorCat].some(
+                    minorCat => categoryData[minorCat]?.currentScore > 0.1
+                );
             });
 
             if (activeMajorCategories.length > 0) {
@@ -856,7 +740,11 @@ const sketch = (p) => {
             if (this.species === "Artificial") {
                 this.vel = p5.Vector.random3D().mult(p.random(1, 3));
             } else {
-                this.vel = p.createVector(p.random(-0.5, 0.5), p.random(-0.5, 0.5), p.random(-0.5, 0.5));
+                this.vel = p.createVector(
+                    p.random(-0.5, 0.5),
+                    p.random(-0.5, 0.5),
+                    p.random(-0.5, 0.5)
+                );
             }
             this.baseVel = this.vel.copy();
         }
@@ -870,6 +758,7 @@ const sketch = (p) => {
             this.pos.add(this.vel);
             this.rotation.add(this.rotationSpeed);
             this.lifespan--;
+
             switch (this.species) {
                 case "Forest & Life":
                     let lifeTargetVel = p5.Vector.add(this.baseVel, this.flockmateInfluence);
@@ -882,7 +771,11 @@ const sketch = (p) => {
                     break;
 
                 case "Atmosphere":
-                    let windForce = p.createVector(p.noise(this.pos.x * 0.01, p.frameCount * 0.01) - 0.5, p.noise(this.pos.y * 0.01, p.frameCount * 0.01) - 0.5, 0);
+                    let windForce = p.createVector(
+                        p.noise(this.pos.x * 0.01, p.frameCount * 0.01) - 0.5,
+                        p.noise(this.pos.y * 0.01, p.frameCount * 0.01) - 0.5,
+                        0
+                    );
                     windForce.mult(0.1);
                     this.vel.add(windForce);
                     this.vel.limit(1.0);
@@ -917,25 +810,13 @@ const sketch = (p) => {
             
             this.displayHue = p.lerp(this.displayHue, targetParticleHue, this.hueChangeSpeed);
             
-            p.fill( (this.displayHue + this.hueOffset) % 360, 80, brightness, alpha);
+            p.fill((this.displayHue + this.hueOffset) % 360, 80, brightness, alpha);
 
             let s = this.size + smoothedBassLevel * 50;
 
             switch (this.shapeType) {
                 case 0: p.sphere(s); break;
                 case 1: p.box(s * 1.5); break;
-                case 2:
-                    p.beginShape(p.TRIANGLES);
-                    let v0 = p.createVector(0, -s, 0);
-                    let v1 = p.createVector(-s, s, s);
-                    let v2 = p.createVector(s, s, s);
-                    let v3 = p.createVector(0, s, -s);
-                    p.vertex(v0.x, v0.y, v0.z); p.vertex(v1.x, v1.y, v1.z); p.vertex(v2.x, v2.y, v2.z);
-                    p.vertex(v0.x, v0.y, v0.z); p.vertex(v2.x, v2.y, v2.z); p.vertex(v3.x, v3.y, v3.z);
-                    p.vertex(v0.x, v0.y, v0.z); p.vertex(v3.x, v3.y, v3.z); p.vertex(v1.x, v1.y, v1.z);
-                    p.vertex(v1.x, v1.y, v1.z); p.vertex(v3.x, v3.y, v3.z); p.vertex(v2.x, v2.y, v2.z);
-                    p.endShape(p.CLOSE);
-                    break;
             }
             p.pop();
         }
