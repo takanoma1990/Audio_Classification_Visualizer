@@ -17,10 +17,10 @@ const sketch = (p) => {
   const scoreDisplayMax = 0.3;
 
   const CATEGORIES_HIERARCHY = {
-    "Forest & Life": ["Bird", "Rustling leave", "Speech", "Typing", "Laughter"],
+    "Forest & Life": ["Bird", "Rustling leave", "Speech", "Laughter"],
     Water: ["Ocean", "Water", "Stream"],
-    Atmosphere: ["Thunderstorm", "Wind", "Fire"],
-    Traffic: ["Aircraft", "Car", "Rail transport"],
+    Atmosphere: ["Thunderstorm", "Wind", "Fire", "Typing"],
+    Traffic: ["Aircraft", "Car", "Rail transport", "Conversation"],
     Music: ["Drum machine", "Percussion", "Synthesizer"],
   };
 
@@ -654,32 +654,6 @@ const sketch = (p) => {
             );
 
             iconCtx.restore();
-    }
-
-    // 近いアイコン同士を線で結ぶ処理はそのままでOK
-    const connectDistance = 160;
-    iconCtx.lineWidth = 1;
-
-    for (let i = 0; i < flowingIconsHistory.length; i++) {
-      for (let j = i + 1; j < flowingIconsHistory.length; j++) {
-        let iconA = flowingIconsHistory[i];
-        let iconB = flowingIconsHistory[j];
-
-        if (iconA.majorCategory === iconB.majorCategory) {
-          let dx = iconA.x - iconB.x;
-          let dy = iconA.y - iconB.y;
-          let distance = Math.sqrt(dx * dx + dy * dy);
-
-          if (distance < connectDistance) {
-            const alpha = p.map(distance, 0, connectDistance, 1.0, 0.1);
-            iconCtx.strokeStyle = `rgba(255,255,255,${alpha})`;
-            iconCtx.beginPath();
-            iconCtx.moveTo(iconA.x, iconA.y);
-            iconCtx.lineTo(iconB.x, iconB.y);
-            iconCtx.stroke();
-          }
-        }
-      }
     }
   }
 
