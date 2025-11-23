@@ -12,7 +12,7 @@ const sketch = (p) => {
     let groupCooldowns = {};
     let musicScoreData = { targetScore: 0 }; 
 
-    const historyLength = 80;
+    const historyLength = 50;
     const startBin = 10;
     const noiseThreshold = 100;
 
@@ -82,7 +82,7 @@ const sketch = (p) => {
     };
 
     let particles = [];
-    const numParticles = 120;
+    const numParticles = 80;
     const particleBounds = 5000;
 
     let bassLevel = 0;
