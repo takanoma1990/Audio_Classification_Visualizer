@@ -17,7 +17,7 @@ const sketch = (p) => {
   const scoreDisplayMax = 0.3;
 
   const CATEGORIES_HIERARCHY = {
-    "Forest & Life": ["Bird", "Rustling leave"],
+    "Forest & Life": ["Bird", "Rustling leave", "Speech"],
     Water: ["Ocean", "Water", "Stream"],
     Atmosphere: ["Thunderstorm", "Wind", "Fire"],
     Traffic: ["Aircraft", "Car", "Rail transport"],
@@ -76,7 +76,7 @@ const sketch = (p) => {
   let isBalancedMode = false;
   let activeHues = [];
   const MIN_ACTIVE_CATEGORIES = 3;
-  const ACTIVE_CATEGORY_THRESHOLD = 0.05;
+  const ACTIVE_CATEGORY_THRESHOLD = 0.01;
 
   let targetHue = 210;
   let currentHue = 210;
