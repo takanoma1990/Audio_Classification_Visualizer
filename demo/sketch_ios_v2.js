@@ -1,11 +1,7 @@
-// 1. MediaPipe Audio のモジュールを import
 import { AudioClassifier, FilesetResolver } from "./task-audio/audio_bundle.mjs";
 
-// 2. p5.js インスタンスモード
 const sketch = (p) => {
-
-  // ==== 定数・データ構造 =========================================
-
+  // ==== 定数 =========================================
   const CATEGORIES_HIERARCHY = {
     "Forest & Life": ["Bird", "Rustling leave"],
     "Water": ["Ocean", "Water", "Stream"],
@@ -23,18 +19,16 @@ const sketch = (p) => {
   };
 
   const allTargetCategories = Object.values(CATEGORIES_HIERARCHY).flat();
-
   const SCORE_BOOST = 10.0;
   const SPECIAL_BOOSTS = {
-    "Speech": 0.001,
-    "Music": 0.1,
-    "Thunderstorm": 2.0,
+    Speech: 0.001,
+    Music: 0.1,
+    Thunderstorm: 2.0,
   };
 
-  // ==== 音・モデルまわり =========================================
-
-  let fft;
-  let audioClassifier;
+  // ==== 音・分類まわり ===============================
+  let fft = null;
+  let audioClassifier = null;
   let soundFile;
   let scriptNode;
   let myFont;
@@ -47,50 +41,41 @@ const sketch = (p) => {
   const waveformSmoothing = 0.1;
   let smoothedWaveform = [];
 
-  // iOS 向け：処理を軽くするために推論呼び出しを間引く
-  let processCounter = 0;
+  let processCounter = 0; // 推論間引き用
 
-  // カテゴリごとのスコア
   let categoryData = {};
   let musicScoreData = { targetScore: 0 };
 
-  // ==== ビジュアル ===============================================
-
-  // カテゴリアイコン
+  // ==== ビジュアル状態 ===============================
   let iconImages = {};
-
-  // 2D で流すアイコンの情報
   let flowingIconsHistory = [];
   let groupCooldowns = {};
-
-  // 背景色制御
   let targetHue = 210;
   let currentHue = 210;
 
-  // ==== 初期化 ===================================================
-
+  // ==== preload ======================================
   p.preload = () => {
     myFont = p.loadFont("Roboto-Regular.ttf");
     soundFile = p.loadSound("music/beat_ambient.mp3");
 
-    // カテゴリ名と同じファイル名のアイコン PNG を読み込む
     allTargetCategories.forEach((categoryName) => {
       const path = `icons/${categoryName}.png`;
       iconImages[categoryName] = p.loadImage(
         path,
-        () => console.log(`Successfully loaded: ${path}`),
-        () => console.error(`Failed to load: ${path}`)
+        () => console.log(`Loaded icon: ${path}`),
+        () => console.warn(`Failed to load icon: ${path}`)
       );
     });
   };
 
+  // ==== setup ========================================
   p.setup = async () => {
-    p.createCanvas(p.windowWidth, p.windowHeight); // 2D
+    p.createCanvas(p.windowWidth, p.windowHeight);
     p.colorMode(p.HSB, 360, 100, 100, 1.0);
     p.textFont(myFont);
     p.textAlign(p.CENTER, p.CENTER);
 
-    // カテゴリデータ初期化
+    // カテゴリ初期化
     allTargetCategories.forEach((name) => {
       categoryData[name] = {
         displayName: name,
@@ -99,30 +84,31 @@ const sketch = (p) => {
       };
     });
 
-    // グループごとのクールダウン（アイコン出し過ぎ防止）
     Object.keys(CATEGORIES_HIERARCHY).forEach((major) => {
       groupCooldowns[major] = 0;
     });
 
-    // FFT セットアップ（音源：読み込んだ soundFile）
-    fft = new p5.FFT(0.8, 256);
-    fft.setInput(soundFile);
+    // FFT が使えるかチェック
+    if (typeof p5 !== "undefined" && typeof p5.FFT === "function") {
+      fft = new p5.FFT(0.8, 256);
+      fft.setInput(soundFile);
+      console.log("FFT ready");
+    } else {
+      console.warn("p5.FFT is not available. Waveform will be dummy.");
+      fft = null;
+    }
 
-    // MediaPipe Audio セットアップ
     await setupMediaPipe();
     statusMessage = "Tap or press Space to Play";
   };
 
-  // ==== メインループ =============================================
-
+  // ==== draw =========================================
   p.draw = () => {
-    // 背景の色をカテゴリスコアから決める
     updateHueFromCategories();
 
     const bgBrightness = p.map(smoothedBassLevel, 0, 1.5, 12, 35, true);
     p.background(currentHue, 60, bgBrightness);
 
-    // 再生中なら音声解析
     if (isPlaying && fft) {
       let spectrum = fft.analyze();
       bassLevel =
@@ -134,45 +120,29 @@ const sketch = (p) => {
     }
 
     smoothedBassLevel = p.lerp(smoothedBassLevel, bassLevel, 0.3);
-
-    // カテゴリスコアをターゲットに向かってスムージング
     updateCategoryScores();
 
-    // クールダウンを減らす
     for (const major in groupCooldowns) {
       if (groupCooldowns[major] > 0) groupCooldowns[major]--;
     }
 
-    // 2D 波形ラインの描画
     drawWaveformLine();
-
-    // カテゴリアイコン生成（しきい値を超えたら）
     spawnIconsFromCategories();
-
-    // アイコンを流して描画
     drawFlowingIcons();
-
-    // ステータス表示
     drawStatusText();
   };
 
-  // ==== 入力系（PC / iOS 共通の操作） ============================
-
+  // ==== 入力 =========================================
   p.keyPressed = () => {
-    if (p.keyCode === 32) {
-      // Space
-      togglePlay();
-    }
+    if (p.keyCode === 32) togglePlay();
   };
 
   p.mousePressed = () => {
     togglePlay();
   };
 
-  // iOS のタップでも確実に拾いたいとき
   p.touchStarted = () => {
     togglePlay();
-    // 画面スクロールを防ぐ場合は false を返す
     return false;
   };
 
@@ -197,8 +167,7 @@ const sketch = (p) => {
     }
   }
 
-  // ==== MediaPipe Audio セットアップ =============================
-
+  // ==== MediaPipe Audio ==============================
   async function setupMediaPipe() {
     try {
       statusMessage = "Loading Audio Model...";
@@ -213,22 +182,18 @@ const sketch = (p) => {
       });
 
       const audioCtx = p.getAudioContext();
-
-      // iOS向け：バッファを小さめ・推論は間引き
       const bufferSize = 4096;
-      scriptNode = audioCtx.createScriptProcessor(bufferSize, 1, 1);
+      const script = audioCtx.createScriptProcessor(bufferSize, 1, 1);
 
-      scriptNode.onaudioprocess = (e) => {
+      script.onaudioprocess = (e) => {
         if (!isPlaying || !audioClassifier || audioCtx.state !== "running") return;
 
-        // 推論を間引く（2 回に 1 回だけ）
         processCounter++;
-        if (processCounter % 2 !== 0) return;
+        if (processCounter % 2 !== 0) return; // 2回に1回だけ
 
         const inputData = e.inputBuffer.getChannelData(0);
         const results = audioClassifier.classify(inputData, audioCtx.sampleRate);
 
-        // 一度ターゲットをリセット
         for (const name in categoryData) {
           categoryData[name].targetScore = 0;
         }
@@ -248,19 +213,25 @@ const sketch = (p) => {
         }
       };
 
-      soundFile.connect(scriptNode);
-      scriptNode.connect(p5.soundOut.audiocontext.destination);
+      soundFile.connect(script);
+      // p5.soundOut が使えない環境でも落ちないように try/catch
+      try {
+        script.connect(p5.soundOut.audiocontext.destination);
+      } catch (e) {
+        console.warn("Could not connect scriptNode to p5.soundOut:", e);
+        script.connect(audioCtx.destination);
+      }
 
+      scriptNode = script;
       statusMessage = "Tap or press Space to Play";
-      console.log("AudioClassifier ready:", audioClassifier);
+      console.log("AudioClassifier ready");
     } catch (e) {
       console.error("MediaPipe setup failed:", e);
       statusMessage = `Error: Could not load model. ${e.message}`;
     }
   }
 
-  // ==== カテゴリスコア関連 =======================================
-
+  // ==== カテゴリスコア ==================================
   function updateCategoryScores() {
     const musicScore = musicScoreData.targetScore;
     const musicScoreBoost = 10.0;
@@ -319,17 +290,24 @@ const sketch = (p) => {
     currentHue = p.lerp(currentHue, targetHue, 0.1);
   }
 
-  // ==== 波形描画（2D） ===========================================
-
+  // ==== 波形描画（必ず何か描く） =========================
   function drawWaveformLine() {
-    if (!fft) return;
-
     let waveform;
-    if (isPlaying) {
+
+    if (fft && isPlaying) {
       waveform = fft.waveform();
+    } else if (fft && smoothedWaveform.length === 0) {
+      // 再生前・停止後でも一度は取得しておく
+      waveform = fft.waveform();
+    } else if (smoothedWaveform.length > 0) {
+      waveform = smoothedWaveform.slice();
     } else {
-      // 停止中は前回値をゆっくりしぼませる
-      waveform = smoothedWaveform.length ? smoothedWaveform : fft.waveform();
+      // FFT が無い or 初期状態 → ダミー波形
+      waveform = [];
+      const len = 128;
+      for (let i = 0; i < len; i++) {
+        waveform.push(Math.sin((i / len) * Math.PI * 2));
+      }
     }
 
     if (smoothedWaveform.length !== waveform.length) {
@@ -339,9 +317,9 @@ const sketch = (p) => {
       smoothedWaveform[i] = p.lerp(smoothedWaveform[i], waveform[i], waveformSmoothing);
     }
 
-    const lineAlpha = p.map(smoothedBassLevel, 0, 1.5, 0.2, 0.9, true);
+    const lineAlpha = p.map(smoothedBassLevel, 0, 1.5, 0.3, 1.0, true);
     const weight = p.map(smoothedBassLevel, 0, 1.5, 1, 4, true);
-    const amp = p.height * 0.2;
+    const amp = p.height * 0.25;
 
     p.push();
     p.translate(0, p.height / 2);
@@ -361,18 +339,14 @@ const sketch = (p) => {
     p.pop();
   }
 
-  // ==== アイコン生成・描画 =======================================
-
+  // ==== アイコン生成・描画 =============================
   function spawnIconsFromCategories() {
-    const spawnThreshold = 0.3; // currentScore ベースのしきい値
+    const spawnThreshold = 0.25; // 少し低めに
 
     for (const majorCategory in CATEGORIES_HIERARCHY) {
-      const minorCategories = CATEGORIES_HIERARCHY[majorCategory];
-
-      // クールダウン中はスキップ
       if (groupCooldowns[majorCategory] > 0) continue;
 
-      // しきい値を超えたマイナーカテゴリを探す
+      const minorCategories = CATEGORIES_HIERARCHY[majorCategory];
       const candidates = minorCategories.filter((name) => {
         const data = categoryData[name];
         return data && data.currentScore > spawnThreshold;
@@ -382,8 +356,6 @@ const sketch = (p) => {
 
       const pickedName = p.random(candidates);
       spawnIcon(pickedName, majorCategory);
-
-      // 次の出現まで少し待つ
       groupCooldowns[majorCategory] = 20;
     }
   }
@@ -393,7 +365,6 @@ const sketch = (p) => {
     if (!img) return;
 
     const size = p.random(40, 100);
-
     const iconInfo = {
       name: minorName,
       majorCategory,
@@ -403,7 +374,6 @@ const sketch = (p) => {
       size,
       alpha: 1.0,
     };
-
     flowingIconsHistory.push(iconInfo);
   }
 
@@ -425,13 +395,11 @@ const sketch = (p) => {
       p.push();
       p.imageMode(p.CENTER);
 
-      // ふわっとした背景サークル
       p.noStroke();
       p.fill(hue, 70, 80, icon.alpha * 0.5);
       p.circle(icon.x, icon.y, icon.size * 1.4);
 
-      // アイコン本体
-      p.tint(0, 0, 100, icon.alpha); // 白で表示（アイコンの元画像の色を使うなら HSB を変える）
+      p.tint(0, 0, 100, icon.alpha);
       p.image(img, icon.x, icon.y, icon.size, icon.size);
       p.noTint();
 
@@ -439,8 +407,7 @@ const sketch = (p) => {
     }
   }
 
-  // ==== ステータス表示 ===========================================
-
+  // ==== ステータス =====================================
   function drawStatusText() {
     p.fill(0, 0, 100, 0.9);
     p.textSize(16);
@@ -448,5 +415,4 @@ const sketch = (p) => {
   }
 };
 
-// p5 起動
 new p5(sketch);
