@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio Visualizer</title>
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #000;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* p5 キャンバスとアイコン用キャンバスをまとめるコンテナ */
+    #vis-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* p5 が自動で作る canvas を入れる場所 */
+    #p5-holder {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* メインの p5 キャンバスにだけフィルタをかける */
+    #p5-holder canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      filter: blur(4px) brightness(200%) contrast(200%);
+    }
+
+    /* アイコン用のオーバーレイキャンバス（フィルタなし） */
+    #icon-layer {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none; /* タップは下の p5 に通す */
+      display: block;
+    }
+  </style>
+
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Emoji&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style_ios.css">
+</head>
+<body>
+  <!-- ▼ ここを追加：キャンバス用コンテナ -->
+  <div id="vis-container">
+    <div id="p5-holder"></div>
+    <canvas id="icon-layer"></canvas>
+  </div>
+
+  <script src="p5.js"></script>
+  <script src="p5.sound.min.js"></script>
+  <script type="module" src="sketch_mic.js"></script>
+</body>
+</html>

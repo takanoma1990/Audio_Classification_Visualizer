@@ -64,12 +64,14 @@ const sketch = (p) => {
   let smoothedWaveform = [];
   const waveformSmoothing = 0.1;
 
+  // ★ ここから音周り
   let audioClassifier;
   let statusMessage = "Initializing...";
-  let isPlaying = false;
-  let soundFile;
-  let scriptNode;
   let myFont;
+
+  let mic;                  // ★ マイク
+  let isListening = false;  // ★ 今マイクを可視化・分類に使うかどうか
+  let scriptNode;           // ★ MediaPipe に渡すためのノード
 
   let isBalancedMode = false;
   let activeHues = [];
@@ -83,7 +85,9 @@ const sketch = (p) => {
 
   p.preload = () => {
     myFont = p.loadFont("Roboto-Regular.ttf");
-    soundFile = p.loadSound("music/beat_ambient.mp3");
+
+    // ★ ファイル再生はやめるので loadSound は削除
+    // soundFile = p.loadSound("music/beat_ambient.mp3");
 
     // カテゴリに対応する画像をすべて読み込む
     allTargetCategories.forEach((categoryName) => {
@@ -146,44 +150,14 @@ const sketch = (p) => {
 
     await setupMediaPipe();
 
-    if (audioClassifier) {
-      const audioCtx = p.getAudioContext();
+    // ★ FFT は準備だけしておく（入力はマイク開始時にセット）
+    fft = new p5.FFT(0.9, 512);
 
-      fft = new p5.FFT(0.9, 512);
-      fft.setInput(soundFile);
-
-      scriptNode = audioCtx.createScriptProcessor(16384, 1, 1);
-      scriptNode.onaudioprocess = (e) => {
-        if (!isPlaying || !audioClassifier || audioCtx.state !== "running") return;
-        const inputData = e.inputBuffer.getChannelData(0);
-        const results = audioClassifier.classify(inputData, audioCtx.sampleRate);
-
-        for (const name in categoryData) {
-          categoryData[name].targetScore = 0;
-        }
-
-        musicScoreData.targetScore = 0;
-
-        if (results?.length > 0) {
-          const classifications = results[0].classifications[0].categories;
-          classifications.forEach((category) => {
-            const name = category.displayName || category.categoryName;
-            if (categoryData.hasOwnProperty(name)) {
-              categoryData[name].targetScore = category.score;
-            }
-            if (name === "Music") {
-              musicScoreData.targetScore = category.score;
-            }
-          });
-        }
-      };
-
-      soundFile.connect(scriptNode);
-      scriptNode.connect(p5.soundOut.audiocontext.destination);
-    }
+    // ★ マイクインスタンスもここで生成（startは後でユーザー操作時）
+    mic = new p5.AudioIn();
 
     p.noCursor();
-    statusMessage = "Tap / Click / Space to Play";
+    statusMessage = "Tap / Click / Space to enable mic";
   };
 
   p.draw = () => {
@@ -202,8 +176,8 @@ const sketch = (p) => {
       }
     }
 
-    // FFT からエネルギー取得
-    if (isPlaying && fft) {
+    // FFT からエネルギー取得（マイク使用）
+    if (isListening && fft) {
       fft.analyze();
       bassLevel =
         p.map(fft.getEnergy("bass"), 0, 255, 0, 1) +
@@ -241,33 +215,103 @@ const sketch = (p) => {
 
   p.keyPressed = async () => {
     if (p.keyCode === 32) {
-      togglePlay();
+      toggleListen();
     }
   };
 
   p.mousePressed = () => {
-    togglePlay();
+    toggleListen();
   };
 
   p.touchStarted = () => {
-    togglePlay();
+    toggleListen();
     return false;
   };
 
-  function togglePlay() {
-    if (p.getAudioContext().state !== "running") {
-      p.getAudioContext().resume();
+  // ★ マイク ON/OFF トグル
+  function toggleListen() {
+    const audioCtx = p.getAudioContext();
+    if (audioCtx.state !== "running") {
+      audioCtx.resume();
     }
 
-    if (soundFile.isPlaying()) {
-      soundFile.pause();
-      isPlaying = false;
-      statusMessage = "Paused. Tap / Click / Space to play.";
+    if (!isListening) {
+      // --- 初回：マイク開始＆接続 ---
+      startMicChain();
     } else {
-      soundFile.loop();
-      isPlaying = true;
-      statusMessage = "Playing... Tap / Click / Space to pause.";
+      // --- 可視化・分類だけ止める（マイクストリーム自体は開いたままにしておく） ---
+      isListening = false;
+      statusMessage = "Mic paused. Tap / Click / Space to resume.";
     }
+  }
+
+  // ★ マイク・FFT・MediaPipe をつなぐ処理
+  function startMicChain() {
+    if (!mic) {
+      statusMessage = "Mic not ready.";
+      return;
+    }
+
+    // mic.start はコールバック形式なので Promise ラップしてもよいけど、
+    // ここではそのまま使う
+    mic.start(
+      () => {
+        const audioCtx = p.getAudioContext();
+
+        // FFT の入力をマイクに
+        if (fft) {
+          fft.setInput(mic);
+        }
+
+        // MediaPipe 用の ScriptProcessor を作る（まだ無ければ）
+        if (!scriptNode && audioClassifier) {
+          scriptNode = audioCtx.createScriptProcessor(16384, 1, 1);
+          scriptNode.onaudioprocess = (e) => {
+            if (!isListening || !audioClassifier || audioCtx.state !== "running") return;
+            const inputData = e.inputBuffer.getChannelData(0);
+            const results = audioClassifier.classify(inputData, audioCtx.sampleRate);
+
+            for (const name in categoryData) {
+              categoryData[name].targetScore = 0;
+            }
+            musicScoreData.targetScore = 0;
+
+            if (results?.length > 0) {
+              const classifications = results[0].classifications[0].categories;
+              classifications.forEach((category) => {
+                const name = category.displayName || category.categoryName;
+                if (categoryData.hasOwnProperty(name)) {
+                  categoryData[name].targetScore = category.score;
+                }
+                if (name === "Music") {
+                  musicScoreData.targetScore = category.score;
+                }
+              });
+            }
+          };
+
+          // p5.AudioIn の中にある MediaStream から AudioNode を作成
+          if (mic.stream) {
+            const src = audioCtx.createMediaStreamSource(mic.stream);
+            src.connect(scriptNode);
+          } else if (mic.input) {
+            // 古い p5 では input (GainNode) 経由でも可
+            mic.input.connect(scriptNode);
+          }
+
+          // ScriptProcessor はどこかに接続しないと動かないので、
+          // 音を出さないダミーの destination に接続
+          scriptNode.connect(audioCtx.destination);
+        }
+
+        isListening = true;
+        statusMessage = "Listening from mic... Tap / Click / Space to pause.";
+      },
+      (err) => {
+        console.error("Mic start error:", err);
+        statusMessage = "Mic permission denied.";
+      }
+    );
   }
 
   p.windowResized = () => {
@@ -304,7 +348,7 @@ const sketch = (p) => {
         scoreThreshold: 0.1,
       });
       console.log(audioClassifier);
-      statusMessage = "Tap / Click / Space to Play";
+      statusMessage = "Tap / Click / Space to enable mic";
     } catch (e) {
       console.error("MediaPipe setup failed:", e);
       statusMessage = `Error: Could not load model. ${e.message}`;
@@ -316,7 +360,7 @@ const sketch = (p) => {
   function drawWaveformLine2D() {
     if (!fft) return;
 
-    if (isPlaying) {
+    if (isListening) {
       let waveform = fft.waveform();
 
       if (smoothedWaveform.length !== waveform.length) {
@@ -516,15 +560,14 @@ const sketch = (p) => {
       iconCtx.save();
       iconCtx.translate(iconInfo.x, iconInfo.y);
 
-      // 背景の光る丸（白ベース。必要ならカテゴリ色に変えられる）
+      // 背景の光る丸
       iconCtx.fillStyle = `rgba(255,255,255,${alpha * 0.15})`;
       iconCtx.beginPath();
-    //   iconCtx.arc(0, 0, iconInfo.size * 0.9, 0, Math.PI * 2);
       iconCtx.fill();
 
       // アイコン画像
       if (img) {
-        const src = img.canvas || img.elt || img; // p5.Image の中身を CanvasImageSource として使う
+        const src = img.canvas || img.elt || img;
         const w = iconInfo.size;
         const h = iconInfo.size;
 
@@ -709,25 +752,21 @@ const sketch = (p) => {
     }
   }
 
+  // --- ステータス文字（アイコンと同じレイヤーでフィルタなし） ---
   function drawStatusText() {
-    // icon-layer が準備できていないときは何もしない
     if (!iconCtx || !iconCanvas) return;
 
     iconCtx.save();
 
-    // アイコンと同じ座標系（resizeIconCanvasで setTransform 済みなので、
-    // p.width / p.height の座標をそのまま使えます）
     iconCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
     iconCtx.textAlign = "center";
     iconCtx.textBaseline = "middle";
     iconCtx.font = '16px "Roboto", sans-serif';
 
-    // 画面下中央に表示（p5のときと同じイメージ）
     iconCtx.fillText(statusMessage, p.width / 2, p.height - 30);
 
     iconCtx.restore();
-    }
-
+  }
 };
 
 new p5(sketch);
