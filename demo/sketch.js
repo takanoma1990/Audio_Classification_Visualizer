@@ -116,7 +116,7 @@ const sketch = (p) => {
     
     p.preload = () => {
         myFont = p.loadFont('Roboto-Regular.ttf');
-        soundFile = p.loadSound('music/test_v56.mp3');
+        soundFile = p.loadSound('music/beat_ambient.mp3');
         birdModel = p.loadModel('bird_blender.obj', true);
 
         // ★★★ カテゴリに対応する画像をすべて読み込む ★★★
