@@ -57,6 +57,8 @@ const sketch = (p) => {
   let particles = [];
   const numParticles = 120;
   const particleBounds = 600; // 2D用
+  // ★ 追加: リップル管理用
+  let ripples = [];
 
   let bassLevel = 0;
   let smoothedBassLevel = 0;
@@ -244,6 +246,50 @@ const sketch = (p) => {
       statusMessage = "Mic paused. Tap / Click / Space to resume.";
     }
   }
+
+    // --- リップル生成ヘルパー ---
+    function createRippleForIcon(iconInfo) {
+    const hue = CATEGORY_COLORS[iconInfo.majorCategory] ?? 0;
+
+    ripples.push({
+        icon: iconInfo,            // ← ここがポイント：座標ではなく iconInfo を参照
+        radius: 0,
+        maxRadius: iconInfo.size *2,
+        hue,
+        growthSpeed: 2,
+    });
+    }
+
+
+  // --- リップル描画（p5 メインキャンバスに描く） ---
+  function drawRipples() {
+    if (ripples.length === 0) return;
+
+    p.push();
+    p.noFill();
+
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      const r = ripples[i];
+
+      const progress = r.radius / r.maxRadius;
+      const alpha = p.map(1 - progress, 0, 1, 0, 0.8, true);
+      const weight = p.map(1 - progress, 0, 50, 0.5, 4, true);
+
+      p.stroke(r.hue, 80, 100, alpha);
+      p.strokeWeight(50);
+      p.ellipse(r.x, r.y, r.radius * 2);
+
+      r.radius += r.growthSpeed;
+
+      // 一定以上広がったら削除
+      if (r.radius > r.maxRadius) {
+        ripples.splice(i, 1);
+      }
+    }
+
+    p.pop();
+  }
+
 
   // ★ マイク・FFT・MediaPipe をつなぐ処理
   function startMicChain() {
@@ -505,91 +551,112 @@ const sketch = (p) => {
     }
   }
 
-  function spawnIcon(minorCategoryName, majorCategory) {
-    let y = p.random(p.height * 0.2, p.height * 0.8);
-    const newIconInfo = {
-      name: minorCategoryName,
-      majorCategory,
-      x: -100, // 左端の外から流れてくる
-      y,
-      vy: p.random(-0.5, 0.5),
-      vx: p.random(3, 6),
-      lifespan: 400,
-      size: p.random(50, 120),
-      wobblePhase: p.random(0, 1000),
-      wobbleRange: p.random(10, 60),
-    };
-    flowingIconsHistory.push(newIconInfo);
-  }
+    function spawnIcon(minorCategoryName, majorCategory) {
+        let y = p.random(p.height * 0.2, p.height * 0.8);
+        console.log("generate!");
+        const newIconInfo = {
+            name: minorCategoryName,
+            majorCategory,
+            x: p.random(p.width / 2 - 300, p.width / 2 + 300),
+            y,
+            vy: p.random(-1, 1),
+            vx: p.random(-1, 1),
+            lifespan: 200,
+            size: p.random(100, 200),
+            wobblePhase: p.random(0, 1000),
+            wobbleRange: p.random(10, 60),
+
+            // ★ 追加: 成長アニメ用
+            age: 0,           // 何フレーム生きているか
+            growFrames: 100,  // 0 → フルサイズになるまでのフレーム数
+        };
+
+        flowingIconsHistory.push(newIconInfo);
+
+        // リップル生成（そのままでOK）
+        createRippleForIcon(newIconInfo);
+    }
+
+
 
   // --- アイコンの 2D 描画（icon-layer に描画） ---
 
-  function drawFlowingImages2D() {
-    if (!iconCtx || !iconCanvas) return;
+    function drawFlowingImages2D() {
+        if (!iconCtx || !iconCanvas) return;
 
-    // icon-layer 全体クリア
-    iconCtx.clearRect(0, 0, iconCanvas.width, iconCanvas.height);
+        // クリア
+        iconCtx.clearRect(0, 0, iconCanvas.width, iconCanvas.height);
 
-    // アイコン本体
-    for (let i = flowingIconsHistory.length - 1; i >= 0; i--) {
-      let iconInfo = flowingIconsHistory[i];
+        // ripple（追従）を先に
+        drawRipples2D();
 
-      iconInfo.x += iconInfo.vx;
-      iconInfo.y += iconInfo.vy;
-      iconInfo.y +=
-        Math.sin((p.frameCount + iconInfo.wobblePhase) * 0.02) *
-        0.5 *
-        (iconInfo.vx / 4);
+        // アイコン本体
+        for (let i = flowingIconsHistory.length - 1; i >= 0; i--) {
+            let iconInfo = flowingIconsHistory[i];
 
-      iconInfo.lifespan--;
+            // 位置更新
+            iconInfo.x += iconInfo.vx;
+            iconInfo.y += iconInfo.vy;
+            iconInfo.y +=
+            Math.sin((p.frameCount + iconInfo.wobblePhase) * 0.02) *
+            0.5 *
+            (iconInfo.vx / 4);
 
-      const img = iconImages[iconInfo.name];
-      const alpha = p.map(iconInfo.lifespan, 0, 100, 0, 1.0, true);
+            iconInfo.lifespan--;
+            iconInfo.age++;  // ★ 成長用の年齢カウント
 
-      // 画面外 or 寿命切れで削除
-      if (
-        iconInfo.lifespan < 0 ||
-        iconInfo.x - iconInfo.size > p.width + 100 ||
-        iconInfo.y < -200 ||
-        iconInfo.y > p.height + 200
-      ) {
-        flowingIconsHistory.splice(i, 1);
-        continue;
-      }
+            const img = iconImages[iconInfo.name];
 
-      iconCtx.save();
-      iconCtx.translate(iconInfo.x, iconInfo.y);
+            // --- 成長率計算（0〜1） ---
+            const rawProgress = iconInfo.growFrames > 0
+            ? p.constrain(iconInfo.age / iconInfo.growFrames, 0, 1)
+            : 1;
 
-      // 背景の光る丸
-      iconCtx.fillStyle = `rgba(255,255,255,${alpha * 0.15})`;
-      iconCtx.beginPath();
-      iconCtx.fill();
+            // そのままでもいいけど、少しイーズをかける（スムースステップ）
+            const growProgress = rawProgress * rawProgress * (3 - 2 * rawProgress);
+            const drawSize = iconInfo.size * growProgress;  // ★ 実際に描くサイズ
 
-      // アイコン画像
-      if (img) {
-        const src = img.canvas || img.elt || img;
-        const w = iconInfo.size;
-        const h = iconInfo.size;
+            const alpha = p.map(iconInfo.lifespan, 0, 100, 0, 1.0, true) * growProgress;
 
-        iconCtx.globalAlpha = alpha;
-        iconCtx.drawImage(src, -w / 2, -h / 2, w, h);
-        iconCtx.globalAlpha = 1.0;
-      }
+            // 画面外 or 寿命切れで削除
+            if (
+            iconInfo.lifespan < 0 ||
+            iconInfo.x - iconInfo.size > p.width + 100 ||
+            iconInfo.y < -200 ||
+            iconInfo.y > p.height + 200
+            ) {
+            flowingIconsHistory.splice(i, 1);
+            continue;
+            }
 
-      // 枠
-      iconCtx.strokeStyle = `rgba(255,255,255,${alpha})`;
-      iconCtx.lineWidth = 2;
-      iconCtx.strokeRect(
-        -iconInfo.size * 0.55,
-        -iconInfo.size * 0.55,
-        iconInfo.size * 1.1,
-        iconInfo.size * 1.1
-      );
+            iconCtx.save();
+            iconCtx.translate(iconInfo.x, iconInfo.y);
 
-      iconCtx.restore();
+            // アイコン画像
+            if (img) {
+            const src = img.canvas || img.elt || img;
+            const w = drawSize;
+            const h = drawSize;
+
+            iconCtx.globalAlpha = alpha;
+            iconCtx.drawImage(src, -w / 2, -h / 2, w, h);
+            iconCtx.globalAlpha = 1.0;
+            }
+
+            // 枠
+            iconCtx.strokeStyle = `rgba(255,255,255,${alpha})`;
+            iconCtx.lineWidth = 2;
+            iconCtx.strokeRect(
+            -drawSize * 0.55,
+            -drawSize * 0.55,
+            drawSize * 1.1,
+            drawSize * 1.1
+            );
+
+            iconCtx.restore();
     }
 
-    // 近いアイコン同士を線で結ぶ
+    // 近いアイコン同士を線で結ぶ処理はそのままでOK
     const connectDistance = 160;
     iconCtx.lineWidth = 1;
 
@@ -625,6 +692,48 @@ const sketch = (p) => {
       particle.update();
     }
   }
+
+    function drawRipples2D() {
+        if (!iconCtx || !iconCanvas) return;
+        if (ripples.length === 0) return;
+
+        for (let i = ripples.length - 1; i >= 0; i--) {
+            const r = ripples[i];
+
+            // ひもづいているアイコンの現在位置を使う
+            const icon = r.icon;
+            // アイコンがもう消えている／寿命切れっぽい場合は ripple も消してしまう
+            if (!icon || icon.lifespan <= 0) {
+            ripples.splice(i, 1);
+            continue;
+            }
+
+            const cx = icon.x;
+            const cy = icon.y;
+
+            const progress = r.radius / r.maxRadius;
+            const alpha = p.map(1 - progress, 0, 1, 0, 0.6, true);
+            const lineWidth = p.map(1 - progress, 0, 1, 0.5, 3, true);
+
+            const col = `rgba(255, 255, 255, ${alpha})`;
+
+            iconCtx.save();
+            iconCtx.lineWidth = lineWidth;
+            iconCtx.strokeStyle = col;
+            iconCtx.beginPath();
+            iconCtx.arc(cx, cy, r.radius, 0, Math.PI * 2);
+            iconCtx.stroke();
+            iconCtx.restore();
+
+            r.radius += r.growthSpeed;
+
+            if (r.radius > r.maxRadius) {
+            ripples.splice(i, 1);
+            }
+        }
+        }
+
+
 
   class Particle {
     constructor() {
