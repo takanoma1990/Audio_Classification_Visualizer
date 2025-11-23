@@ -17,7 +17,7 @@ const sketch = (p) => {
   const scoreDisplayMax = 0.3;
 
   const CATEGORIES_HIERARCHY = {
-    "Forest & Life": ["Bird", "Rustling leave", "Speech"],
+    "Forest & Life": ["Bird", "Rustling leave", "Speech", "Typing", "Laughter"],
     Water: ["Ocean", "Water", "Stream"],
     Atmosphere: ["Thunderstorm", "Wind", "Fire"],
     Traffic: ["Aircraft", "Car", "Rail transport"],
@@ -48,7 +48,7 @@ const sketch = (p) => {
   let categoryData = {};
   const SCORE_BOOST = 10.0;
   const SPECIAL_BOOSTS = {
-    Speech: 0.001,
+    Speech: 0.1,
     Music: 0.1,
     Thunderstorm: 2,
   };
@@ -488,7 +488,7 @@ const sketch = (p) => {
           true
         );
 
-        const detectionThreshold = 0.5;
+        const detectionThreshold = 0.1;
 
         // アイコン生成
         if (
