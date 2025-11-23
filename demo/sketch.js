@@ -386,6 +386,7 @@ const sketch = (p) => {
     };
     
     p.mousePressed = async () => {
+        //mouseでの操作
         togglePlay();
     };
 
