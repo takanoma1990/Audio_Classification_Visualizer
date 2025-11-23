@@ -17,7 +17,7 @@ const sketch = (p) => {
   const scoreDisplayMax = 0.3;
 
   const CATEGORIES_HIERARCHY = {
-    "Forest & Life": ["Bird", "Rustling leave", "Speech", "Laughter"],
+    "Forest & Life": ["Bird", "Rustling leave", "Speech", "Laughter", "Walk, footsteps"],
     Water: ["Ocean", "Water", "Stream"],
     Atmosphere: ["Thunderstorm", "Wind", "Fire", "Typing"],
     Traffic: ["Aircraft", "Car", "Rail transport", "Conversation"],
