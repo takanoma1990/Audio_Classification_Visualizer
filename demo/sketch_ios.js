@@ -228,7 +228,7 @@ const sketch = (p) => {
 
 
     p.draw = () => {
-        p.background(30);
+        p.background(50);
         // p.background("#002853");
 
         for (const majorCategory in groupCooldowns) {
