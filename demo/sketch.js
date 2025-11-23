@@ -179,7 +179,7 @@ const sketch = (p) => {
 
 
     p.draw = () => {
-        p.background(0);
+        p.background(200, 100, 30);
 
         // ★ デバッグ用：必ず左上に赤丸 + status 表示
         p.push();
