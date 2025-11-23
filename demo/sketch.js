@@ -266,7 +266,7 @@ const sketch = (p) => {
             let spectrum = fft.analyze();
             bassLevel = p.map(fft.getEnergy("bass"), 0, 255, 0, 1) + p.map(fft.getEnergy("mid"), 0, 255, 0, 1) + p.map(fft.getEnergy("treble"), 0, 255, 0, 1);
             //スペクトログラムの描画
-            drawSpectrogram(spectrum);
+            // drawSpectrogram(spectrum);
         } else {
             bassLevel *= 0.95;
         }
@@ -385,6 +385,10 @@ const sketch = (p) => {
         }
     };
     
+    p.mousePressed = async () => {
+        togglePlay();
+    };
+
     function togglePlay() {
         if (p.getAudioContext().state !== 'running') {
             p.getAudioContext().resume();
