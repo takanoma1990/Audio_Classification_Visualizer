@@ -12,7 +12,7 @@ const sketch = (p) => {
     let groupCooldowns = {};
     let musicScoreData = { targetScore: 0 }; 
 
-    const historyLength = 200;
+    const historyLength = 80;
     const startBin = 10;
     const noiseThreshold = 100;
 
