@@ -4,6 +4,9 @@ import { AudioClassifier, FilesetResolver } from "./task-audio/audio_bundle.mjs"
 // 2. p5.jsのスケッチ全体を一つの関数オブジェクトとして定義します (インスタンスモード)
 const sketch = (p) => {
 
+       // ★ iOS / モバイルかどうか判定
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
     // --- スケッチ内で使う変数を定義 ---
     let fft;
     let spectrumHistory = [];
@@ -82,8 +85,9 @@ const sketch = (p) => {
     };
 
     let particles = [];
-    const numParticles = 80;
-    const particleBounds = 5000;
+    const numParticles = isMobile ? 40 : 80;      // iPad では半分
+    const particleBounds = isMobile ? 3000 : 5000; // 範囲も少し狭く
+
 
     let bassLevel = 0;
     let smoothedBassLevel = 0;
@@ -146,6 +150,9 @@ const sketch = (p) => {
 
         p.createCanvas(p.windowWidth, p.windowHeight, p.WEBGL);
 
+        // ★ 高解像度端末で重くなるので 1 に固定
+        p.pixelDensity(1);
+
         // camEyeX = -1600;
         // camEyeY = -300;
         // camEyeZ = 300;
@@ -165,7 +172,7 @@ const sketch = (p) => {
             };
         });
 
-        textLayer = p.createGraphics(0, 0);
+        textLayer = p.createGraphics(p.windowWidth, p.windowHeight);
         textLayer.textFont(myFont);
         textLayer.colorMode(p.HSB, 360, 100, 100, 1.0);
 
@@ -178,8 +185,10 @@ const sketch = (p) => {
         if (audioClassifier) {
             const audioCtx = p.getAudioContext();
 
-            fft = new p5.FFT(0.3, 512);
-            fft.setInput(soundFile);
+             // ★ iPad などでは FFT 解像度を落として負荷軽減
+            const fftBins = isMobile ? 256 : 512;
+            fft = new p5.FFT(0.3, fftBins);
+
 
             scriptNode = audioCtx.createScriptProcessor(16384, 1, 1);
             scriptNode.onaudioprocess = (e) => {
@@ -251,7 +260,11 @@ const sketch = (p) => {
         
         // drawCameraHelper();
 
-        p.orbitControl();
+        // ★ モバイルではカメラ固定にして軽くする
+        if (!isMobile) {
+            p.orbitControl();
+        }
+
         const cam_mode = 0;
         if(cam_mode == 0){
             p.camera(camEyeX, camEyeY, camEyeZ, 0, 0, 0, 0, 1, 0);
@@ -321,12 +334,12 @@ const sketch = (p) => {
         
         p.ambientLight(60); 
 
-        // 2. それぞれのアイコンを点光源として設置
-        flowingIconsHistory.forEach(iconInfo => {
-            const hue = CATEGORY_COLORS[iconInfo.majorCategory];
-            // ポイントライトをアイコンの位置に設置
-            p.pointLight(hue, 80, 100, iconInfo.pos); 
-        });
+        if (!isMobile) {
+            flowingIconsHistory.forEach(iconInfo => {
+                const hue = CATEGORY_COLORS[iconInfo.majorCategory];
+                p.pointLight(hue, 80, 100, iconInfo.pos); 
+            });
+        }
 
         drawParticles();
         drawTextOverlay();
@@ -340,7 +353,7 @@ const sketch = (p) => {
         p.image(textLayer, 0, 0);
         p.pop();
 
-        p.push();
+         p.push();
         p.translate(0.2000,0);
         p.rotateX(p.frameCount*0.0004);
         p.rotateY(p.frameCount*0.0002);
@@ -349,7 +362,15 @@ const sketch = (p) => {
         p.strokeWeight(5);
         p.stroke(0, 0, 300);
         p.scale(-1, 1, 1);
-        p.sphere(6000);
+
+        if (!isMobile) {
+            // PC 向け：ディティール高め
+            p.sphere(6000);
+        } else {
+            // iPad 向け：ディティールを落とすか、簡単な円に差し替え
+            p.sphere(6000, 10, 10); // もしくはコメントアウトしても OK
+        }
+
         p.pop();
     };
 
@@ -386,8 +407,13 @@ const sketch = (p) => {
     };
     
     p.mousePressed = () => {
-        // mouseでの操作
         togglePlay();
+    };
+
+    // ★ iOS / iPad 用に touchStarted も追加
+    p.touchStarted = () => {
+        togglePlay();
+        return false; // デフォルトのスクロール等を防ぐ
     };
 
     function togglePlay() {
