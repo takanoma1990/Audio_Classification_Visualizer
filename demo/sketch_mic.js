@@ -49,8 +49,7 @@ const sketch = (p) => {
   const SCORE_BOOST = 10.0;
   const SPECIAL_BOOSTS = {
     Speech: 0.1,
-    Music: 0.1,
-    Thunderstorm: 2,
+    Music: 0.1
   };
 
   // パーティクル
