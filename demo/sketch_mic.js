@@ -25,7 +25,7 @@ const sketch = (p) => {
     Water: ["Ocean", "Water", "Stream", "Water tap, faucet"],
     Atmosphere: ["Thunderstorm", "Wind", "Fire", "Typing", "Cutlery, silverware"],
     Traffic: ["Aircraft", "Car", "Rail transport", "Conversation"],
-    Music: ["Drum machine", "Percussion", "Synthesizer", "Music"],
+    Music: ["Drum machine", "Percussion", "Synthesizer", "Music", "Hands"],
   };
 
   const CATEGORY_COLORS = {
@@ -515,7 +515,7 @@ const sketch = (p) => {
         -p.height * 0.25,
         p.height * 0.25
       );
-      // p.vertex(x, y);
+      p.vertex(x, y);
     }
     p.endShape();
 
