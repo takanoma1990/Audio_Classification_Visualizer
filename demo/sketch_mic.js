@@ -10,6 +10,10 @@ const sketch = (p) => {
   // --- スケッチ内で使う変数を定義 ---
   let fft;
 
+  let spectrogramG;
+  const SPECTROGRAM_BINS = 32; // 縦方向の分解能（多すぎると重くなる）
+  let lastSpectrum = null;
+
   let flowingIconsHistory = [];
   let groupCooldowns = {};
   let musicScoreData = { targetScore: 0 };
@@ -18,8 +22,8 @@ const sketch = (p) => {
 
   const CATEGORIES_HIERARCHY = {
     "Forest & Life": ["Bird", "Rustling leave", "Speech", "Laughter", "Walk, footsteps"],
-    Water: ["Ocean", "Water", "Stream"],
-    Atmosphere: ["Thunderstorm", "Wind", "Fire", "Typing"],
+    Water: ["Ocean", "Water", "Stream", "Water tap, faucet"],
+    Atmosphere: ["Thunderstorm", "Wind", "Fire", "Typing", "Cutlery, silverware"],
     Traffic: ["Aircraft", "Car", "Rail transport", "Conversation"],
     Music: ["Drum machine", "Percussion", "Synthesizer", "Music"],
   };
@@ -123,6 +127,12 @@ const sketch = (p) => {
     p.colorMode(p.HSB, 360, 100, 100, 1.0);
     p.textFont(myFont);
 
+    // ★ スペクトログラム用 Graphics
+    spectrogramG = p.createGraphics(p.width, p.height);
+    spectrogramG.colorMode(p.HSB, 360, 100, 100, 1.0);
+    spectrogramG.noStroke();
+    spectrogramG.background(0);
+
     // ★ アイコン用キャンバスの取得
     iconCanvas = document.getElementById("icon-layer");
     if (iconCanvas) {
@@ -170,6 +180,9 @@ const sketch = (p) => {
     // p.background(0, 80, bgBrightness);
     p.background(0);
 
+     // ★ スペクトログラム（背景）を描画
+    // drawSpectrogram();
+
     // クールダウン更新
     for (const majorCategory in groupCooldowns) {
       if (groupCooldowns[majorCategory] > 0) {
@@ -179,7 +192,9 @@ const sketch = (p) => {
 
     // FFT からエネルギー取得（マイク使用）
     if (isListening && fft) {
-      fft.analyze();
+      // fft.analyze();
+      const spectrum = fft.analyze();        // ★ ここで配列を取得
+      lastSpectrum = spectrum;               // ★ グローバルに保持
       bassLevel =
         p.map(fft.getEnergy("bass"), 0, 255, 0, 1) +
         p.map(fft.getEnergy("mid"), 0, 255, 0, 1) +
@@ -229,6 +244,8 @@ const sketch = (p) => {
     return false;
   };
 
+  let micStarted = false;  // 追加
+
   // ★ マイク ON/OFF トグル
   function toggleListen() {
     const audioCtx = p.getAudioContext();
@@ -236,11 +253,18 @@ const sketch = (p) => {
       audioCtx.resume();
     }
 
-    if (!isListening) {
-      // --- 初回：マイク開始＆接続 ---
+    if (!micStarted) {
+      // まだマイクチェーン自体が初期化されていないときだけ
       startMicChain();
+      micStarted = true;
+      return;
+    }
+
+    // 2回目以降はフラグの切り替えだけ
+    if (!isListening) {
+      isListening = true;
+      statusMessage = "Listening from mic... Tap / Click / Space to pause.";
     } else {
-      // --- 可視化・分類だけ止める（マイクストリーム自体は開いたままにしておく） ---
       isListening = false;
       statusMessage = "Mic paused. Tap / Click / Space to resume.";
     }
@@ -362,6 +386,12 @@ const sketch = (p) => {
   p.windowResized = () => {
     p.resizeCanvas(p.windowWidth, p.windowHeight);
     resizeIconCanvas();
+
+    // ★ スペクトログラム用 Graphics も作り直す
+    spectrogramG = p.createGraphics(p.width, p.height);
+    spectrogramG.colorMode(p.HSB, 360, 100, 100, 1.0);
+    spectrogramG.noStroke();
+    spectrogramG.background(0);
   };
 
   // --- icon-layer のリサイズ（デバイスピクセル比考慮） ---
@@ -399,6 +429,49 @@ const sketch = (p) => {
       statusMessage = `Error: Could not load model. ${e.message}`;
     }
   }
+
+  const SPEC_COLUMN_WIDTH = 5; // ★ 1フレームで描く幅
+
+  function drawSpectrogram() {
+    if (!spectrogramG || !lastSpectrum) return;
+
+    const spec = lastSpectrum;
+    const bins = Math.min(SPECTROGRAM_BINS, spec.length);
+    const step = spec.length / bins;
+
+    spectrogramG.push();
+
+    // ★ 前のスペクトログラムを右に 5px ずらす
+    spectrogramG.image(spectrogramG, SPEC_COLUMN_WIDTH, 0);
+
+    // ★ 左端（0〜5px）に最新スペクトルを書き込む
+    const x = 0;
+
+    for (let i = 0; i < bins; i++) {
+      const idx = Math.floor(i * step);
+      const amp = spec[idx] / 255; // 0〜1
+
+      const y = p.map(i, 0, bins, spectrogramG.height, 0);
+      const h = spectrogramG.height / bins + 1;
+
+      const brightness = p.map(amp, 0, 1, 0, 90);
+      const alpha = amp * 0.8;
+
+      spectrogramG.noStroke();
+      spectrogramG.fill(currentHue, 60, brightness, alpha);
+
+      // ★ 横幅を 5px に
+      spectrogramG.rect(x, y, SPEC_COLUMN_WIDTH, -h);
+    }
+
+    spectrogramG.pop();
+
+    // 背景として合成
+    p.image(spectrogramG, 0, 0, p.width, p.height);
+  }
+
+
+
 
   // --- 波形ライン（2D 版） ---
 
@@ -442,7 +515,7 @@ const sketch = (p) => {
         -p.height * 0.25,
         p.height * 0.25
       );
-      p.vertex(x, y);
+      // p.vertex(x, y);
     }
     p.endShape();
 
@@ -556,7 +629,7 @@ const sketch = (p) => {
         const newIconInfo = {
             name: minorCategoryName,
             majorCategory,
-            x: p.random(p.width / 2 - 300, p.width / 2 + 300),
+            x: p.random(100, p.width-100),
             y,
             vy: p.random(-1, 1),
             vx: p.random(-1, 1),
