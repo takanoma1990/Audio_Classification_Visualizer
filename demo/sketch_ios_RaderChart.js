@@ -47,8 +47,8 @@ const sketch = (p) => {
     "Forest & Life": 120,
     Water: 190,
     Atmosphere: 60,
-    Traffic: 0,
-    Music: 30,
+    Traffic: 30,
+    Music: 0,
   };
 
   groupCooldowns = {
@@ -752,30 +752,48 @@ const sketch = (p) => {
   function drawRadarChart() {
     const majors = Object.keys(CATEGORIES_HIERARCHY); // ["Forest & Life", "Water", ...]
     
-    // ① 生スコアを配列に
+    // ① 各メジャーカテゴリの「生スコア」を配列に
     const rawScores = majors.map((name) => majorCategoryScores[name] || 0);
 
-    // ② 生スコアの最大値（正規化用）
-    let rawMax = 0;
-    for (let s of rawScores) {
-      if (s > rawMax) rawMax = s;
-    }
-    if (rawMax <= 0) {
-      // 何も鳴ってないときは描かない
+    // ほぼ無音状態なら描かない（全部かなり小さいとき）
+    const totalPower = rawScores.reduce((a, b) => a + b, 0);
+    if (totalPower <= 0.0001) {
       return;
     }
 
-    // ③ 生比率 (0〜1) を計算して、それをスムージングして表示用比率に反映
-    const smoothFactor = 0.01; // 小さいほどゆっくり動く
-    majors.forEach((name, i) => {
-      const rawScore = rawScores[i];
-      const rawRatio = p.constrain(rawScore / rawMax, 0, 1); // 0〜1
-      const prevRatio = radarDisplayRatios[name] || 0;
-      radarDisplayRatios[name] = p.lerp(prevRatio, rawRatio, smoothFactor);
+    // ② 各カテゴリごとの「絶対的な最大値」を決める
+    const absMaxPerCategory = {};
+    majors.forEach((name) => {
+      const minorCount = CATEGORIES_HIERARCHY[name].length;
+      absMaxPerCategory[name] = scoreDisplayMax * minorCount; // ざっくりの上限
     });
 
-    // ④ 以降は「スムージング済みの比率」を使用
-    const ratios = majors.map((name) => radarDisplayRatios[name] || 0);
+    // --- エネルギー(0〜1) → 見た目レベル(0〜1) に変換する関数 ---
+    // 小さくても「動いている」ように見せるための非線形マッピング
+    function energyToLevel(e) {
+      if (e <= 0.01) return 0.0;  // ほぼ無音 → 0（表示しない）
+      if (e <= 0.05) return 0.35; // ちょっと鳴った → 低いけどハッキリ見える
+      if (e <= 0.15) return 0.65; // 中くらい
+      return 1.0;                 // かなり鳴ってる
+    }
+
+    // ③ 「絶対値ベースのエネルギー」→「レベル」にして、それをスムージング
+    const smoothFactor = 0.1; // 小さいほどゆっくり動く（0.2〜0.3 くらいがバランス良さそう）
+
+    majors.forEach((name, i) => {
+      const rawScore = rawScores[i];
+      const absMax = absMaxPerCategory[name] || 1.0;
+      const energy = p.constrain(rawScore / absMax, 0, 1); // 0〜1 の絶対比率
+
+      const targetLevel = energyToLevel(energy);       // 0〜1 の「見た目レベル」
+      const prevLevel   = radarDisplayRatios[name] || 0;
+
+      // 上下とも同じ係数でふわっと追従
+      radarDisplayRatios[name] = p.lerp(prevLevel, targetLevel, smoothFactor);
+    });
+
+    // ④ 以降は「スムージング済みのレベル(0〜1)」を使用
+    const levels = majors.map((name) => radarDisplayRatios[name] || 0);
 
     const cx = p.width * 0.5;
     const cy = p.height * 0.5;
@@ -783,7 +801,7 @@ const sketch = (p) => {
 
     // ラベル後ろのサークルの最小／最大サイズ
     const minCircleR = 10;
-    const maxCircleR = 200;
+    const maxCircleR = 100;
 
     p.push();
     p.translate(cx, cy);
@@ -811,50 +829,52 @@ const sketch = (p) => {
       p.stroke(0, 0, 80, 0.5);
       p.line(0, 0, xAxis, yAxis);
 
-      // このメジャーカテゴリの「スムージング後の比率」
-      const ratio = ratios[i]; // 0〜1
+      // このメジャーカテゴリの「スムージング後のレベル」
+      const level = levels[i]; // 0〜1
 
       // ラベル位置（軸の少し外側）
       const labelR = maxRadius + 40;
       const lx = Math.cos(angle) * labelR;
       const ly = Math.sin(angle) * labelR;
 
-      // ラベル後ろのサークル（サイズ＝比率、色＝CATEGORY_COLORS）
-      const circleR = p.lerp(minCircleR, maxCircleR, ratio);
-      const hue = CATEGORY_COLORS[name] ?? 0;
+      // レベルが 0 ならサークルも描かない（完全に無音の場合）
+      if (level > 0) {
+        // レベルが小さくても「線」にならないように、見た目の最低値を持たせる
+        const visualLevel = p.map(level, 0, 1, 0.3, 1); // 0.3〜1 に圧縮
+        const circleR = p.lerp(minCircleR, maxCircleR, visualLevel);
+        const hue = CATEGORY_COLORS[name] ?? 0;
 
-      p.noStroke();
-      p.fill(hue, 80, 100, 0.1);  // HSB: hueをカテゴリ色から取得
-      p.circle(lx, ly, circleR * 2);
+        p.noStroke();
+        p.fill(hue, 80, 100, 0.15);  // HSB: hueをカテゴリ色から取得
+        p.circle(lx, ly, circleR * 2);
+      }
 
-      // テキスト（サークルの上に描画）
+      // テキスト（サークルの上 or 単独で描画）
       p.fill(0, 0, 100, 0.95);
       p.text(name, lx, ly);
     });
 
-        // スコアポリゴンも同じ ratios を使う
+    // ⑤ レーダーポリゴン（ここでもレベルを使用）
     p.stroke(210, 80, 100, 0.9);
     p.fill(210, 80, 100, 0.25);
-
-    const minRadarRatio = 0.2; // ★ レーダーの最低値（0〜1の間で調整）
 
     p.beginShape();
     majors.forEach((name, i) => {
       const angle = -p.HALF_PI + (p.TWO_PI * i) / majors.length;
-      const baseRatio = ratios[i];       // 0〜1 のスムージング済み比率
-      const plotRatio = p.map(           // 0〜1 → minRadarRatio〜1 にマッピング
-        baseRatio,
-        0, 1,
-        minRadarRatio, 1
-      );
+      const level = levels[i]; // 0〜1
 
-      const r = plotRatio * maxRadius;   // 中心からの距離に変換
+      let plotLevel = 0;
+      if (level > 0) {
+        // 0 では描かない、それ以外は最低 0.3 から描く
+        plotLevel = p.map(level, 0, 1, 0.3, 1);
+      }
+
+      const r = plotLevel * maxRadius;
       const x = Math.cos(angle) * r;
       const y = Math.sin(angle) * r;
       p.vertex(x, y);
     });
     p.endShape(p.CLOSE);
-
 
     p.pop();
   }
