@@ -17,11 +17,11 @@ const sketch = (p) => {
   const scoreDisplayMax = 0.3;
 
   const CATEGORIES_HIERARCHY = {
-    "Forest & Life": ["Bird", "Rustling leave"],
+    "Forest & Life": ["Bird", "Rustling leave", "Outside, rural or natural", "Forest", "Insect"],
     Water: ["Ocean", "Water", "Stream"],
-    Atmosphere: ["Thunderstorm", "Wind", "Fire"],
-    Traffic: ["Aircraft", "Car", "Rail transport"],
-    Music: ["Drum machine", "Percussion", "Synthesizer"],
+    Atmosphere: ["Thunderstorm", "Wind", "Fire", "Rain"],
+    Traffic: ["Aircraft", "Car", "Rail transport", "Motor vehicle (road)", "Speech"],
+    Music: ["Drum machine", "Percussion", "Rattle (instrument)", "Synthesizer", "Guitar", "Piano", "Hands"],
   };
 
   const CATEGORY_COLORS = {
@@ -62,7 +62,7 @@ const sketch = (p) => {
   let smoothedBassLevel = 0;
 
   let smoothedWaveform = [];
-  const waveformSmoothing = 0.1;
+  const waveformSmoothing = 0.01;
 
   let audioClassifier;
   let statusMessage = "Initializing...";
@@ -74,7 +74,7 @@ const sketch = (p) => {
   let isBalancedMode = false;
   let activeHues = [];
   const MIN_ACTIVE_CATEGORIES = 3;
-  const ACTIVE_CATEGORY_THRESHOLD = 0.05;
+  const ACTIVE_CATEGORY_THRESHOLD = 0.01;
 
   let targetHue = 210;
   let currentHue = 210;
@@ -83,7 +83,7 @@ const sketch = (p) => {
 
   p.preload = () => {
     myFont = p.loadFont("Roboto-Regular.ttf");
-    soundFile = p.loadSound("music/beat_ambient.mp3");
+    soundFile = p.loadSound("music/simple_beat.mp3");
 
     // カテゴリに対応する画像をすべて読み込む
     allTargetCategories.forEach((categoryName) => {
@@ -149,7 +149,7 @@ const sketch = (p) => {
     if (audioClassifier) {
       const audioCtx = p.getAudioContext();
 
-      fft = new p5.FFT(0.9, 512);
+      fft = new p5.FFT(0.1, 512);
       fft.setInput(soundFile);
 
       scriptNode = audioCtx.createScriptProcessor(16384, 1, 1);
@@ -162,10 +162,14 @@ const sketch = (p) => {
           categoryData[name].targetScore = 0;
         }
 
+
         musicScoreData.targetScore = 0;
 
         if (results?.length > 0) {
           const classifications = results[0].classifications[0].categories;
+          if(classifications.length >= 2){
+            console.log(classifications);
+          }
           classifications.forEach((category) => {
             const name = category.displayName || category.categoryName;
             if (categoryData.hasOwnProperty(name)) {
@@ -213,7 +217,7 @@ const sketch = (p) => {
       bassLevel *= 0.95;
     }
 
-    smoothedBassLevel = p.lerp(smoothedBassLevel, bassLevel, 0.3);
+    smoothedBassLevel = p.lerp(smoothedBassLevel, bassLevel, 0.1);
 
     // 統合スコア減衰
     const scoreDecay = 0.99;
@@ -301,7 +305,7 @@ const sketch = (p) => {
           delegate: "CPU",
         },
         maxResults: -1,
-        scoreThreshold: 0.1,
+        scoreThreshold: 0.01,
       });
       console.log(audioClassifier);
       statusMessage = "Tap / Click / Space to Play";
@@ -341,19 +345,23 @@ const sketch = (p) => {
 
     p.strokeWeight(weight);
     p.noFill();
-    p.stroke(currentHue, 80, 100, lineAlpha);
+    // p.stroke(currentHue, 80, 100, lineAlpha);
+    p.noStroke();
+    p.fill(currentHue, 80, 100, lineAlpha);
 
     p.beginShape();
-    for (let i = 0; i < smoothedWaveform.length; i++) {
+    for (let i = 0; i < smoothedWaveform.length; i+=3) {
       let x = p.map(i, 0, smoothedWaveform.length, 0, p.width);
       let y = p.map(
         smoothedWaveform[i],
-        -0.5,
-        0.5,
-        -p.height * 0.25,
-        p.height * 0.25
+        -0.1,
+        0.1,
+        -p.height * 0.6,
+        p.height * 0.6
       );
-      p.vertex(x, y);
+      // p.vertex(x, y);
+      p.ellipse(x, y, weight*3+2);
+      p.ellipse(x, -y, weight*3+2);
     }
     p.endShape();
 
@@ -444,7 +452,7 @@ const sketch = (p) => {
           true
         );
 
-        const detectionThreshold = 0.5;
+        const detectionThreshold = 0.1;
 
         // アイコン生成
         if (
