@@ -62,7 +62,7 @@ const sketch = (p) => {
   let smoothedBassLevel = 0;
 
   let smoothedWaveform = [];
-  const waveformSmoothing = 0.01;
+  const waveformSmoothing = 0.02;
 
   let audioClassifier;
   let statusMessage = "Initializing...";
