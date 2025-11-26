@@ -196,9 +196,9 @@ const sketch = (p) => {
       const spectrum = fft.analyze();        // ★ ここで配列を取得
       lastSpectrum = spectrum;               // ★ グローバルに保持
       bassLevel =
-        p.map(fft.getEnergy("bass"), 0, 255, 0, 2) +
-        p.map(fft.getEnergy("mid"), 0, 255, 0, 2) +
-        p.map(fft.getEnergy("treble"), 0, 255, 0, 2);
+        p.map(fft.getEnergy("bass"), 0, 255, 0, 4) +
+        p.map(fft.getEnergy("mid"), 0, 255, 0, 4) +
+        p.map(fft.getEnergy("treble"), 0, 255, 0, 4);
     } else {
       bassLevel *= 0.95;
     }
