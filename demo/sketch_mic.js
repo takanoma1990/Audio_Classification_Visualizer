@@ -25,7 +25,7 @@ const sketch = (p) => {
     Water: ["Ocean", "Water", "Stream", "Water tap, faucet"],
     Atmosphere: ["Thunderstorm", "Wind", "Fire", "Typing", "Cutlery, silverware"],
     Traffic: ["Aircraft", "Car", "Rail transport", "Conversation"],
-    Music: ["Drum machine", "Percussion", "Synthesizer", "Music", "Hands"],
+    Music: ["Drum machine", "Percussion", "Synthesizer", "Hands"],
   };
 
   const CATEGORY_COLORS = {
