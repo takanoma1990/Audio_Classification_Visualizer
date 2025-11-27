@@ -755,12 +755,6 @@ const sketch = (p) => {
     // ① 各メジャーカテゴリの「生スコア」を配列に
     const rawScores = majors.map((name) => majorCategoryScores[name] || 0);
 
-    // ほぼ無音状態なら描かない（全部かなり小さいとき）
-    const totalPower = rawScores.reduce((a, b) => a + b, 0);
-    if (totalPower <= 0.0001) {
-      return;
-    }
-
     // ② 各カテゴリごとの「絶対的な最大値」を決める
     const absMaxPerCategory = {};
     majors.forEach((name) => {
@@ -768,32 +762,28 @@ const sketch = (p) => {
       absMaxPerCategory[name] = scoreDisplayMax * minorCount; // ざっくりの上限
     });
 
-    // --- エネルギー(0〜1) → 見た目レベル(0〜1) に変換する関数 ---
-    // 小さくても「動いている」ように見せるための非線形マッピング
-    function energyToLevel(e) {
-      if (e <= 0.01) return 0.0;  // ほぼ無音 → 0（表示しない）
-      if (e <= 0.05) return 0.35; // ちょっと鳴った → 低いけどハッキリ見える
-      if (e <= 0.15) return 0.65; // 中くらい
-      return 1.0;                 // かなり鳴ってる
-    }
-
-    // ③ 「絶対値ベースのエネルギー」→「レベル」にして、それをスムージング
-    const smoothFactor = 0.1; // 小さいほどゆっくり動く（0.2〜0.3 くらいがバランス良さそう）
+    // ③ 生スコア → 0〜1 のエネルギーに正規化して、そのまま level としてスムージング
+    const smoothFactor = 0.9; // 0〜1（小さいほどゆっくり）
 
     majors.forEach((name, i) => {
       const rawScore = rawScores[i];
-      const absMax = absMaxPerCategory[name] || 1.0;
-      const energy = p.constrain(rawScore / absMax, 0, 1); // 0〜1 の絶対比率
+      const absMax   = absMaxPerCategory[name] || 3.0;
 
-      const targetLevel = energyToLevel(energy);       // 0〜1 の「見た目レベル」
-      const prevLevel   = radarDisplayRatios[name] || 0;
+      // 0〜1 の絶対比率（ここが「本当の値」）
+      let energy = rawScore / absMax;
+      energy = p.constrain(energy, 0, 3);
 
-      // 上下とも同じ係数でふわっと追従
-      radarDisplayRatios[name] = p.lerp(prevLevel, targetLevel, smoothFactor);
+      const prev = radarDisplayRatios[name] || 0;
+      // 上がる/下がるともに同じスムージング
+      radarDisplayRatios[name] = p.constrain(p.lerp(prev, energy, smoothFactor),0,1);
     });
 
-    // ④ 以降は「スムージング済みのレベル(0〜1)」を使用
+    // ④ スムージング済みの level(0〜1) を取り出す
     const levels = majors.map((name) => radarDisplayRatios[name] || 0);
+
+    // 完全に静かで、かつ全カテゴリほぼ0になっていたら描画をやめる
+    const maxLevel = Math.max(...levels);
+    if (maxLevel < 0.001) return;
 
     const cx = p.width * 0.5;
     const cy = p.height * 0.5;
@@ -801,7 +791,10 @@ const sketch = (p) => {
 
     // ラベル後ろのサークルの最小／最大サイズ
     const minCircleR = 10;
-    const maxCircleR = 100;
+    const maxCircleR = 200;
+
+    // ★ 見た目上の最低レベル（ここが 0 の代わりに使われる値）
+    const minVisualLevel = 0.1; // 0〜1（0.05〜0.2 ぐらいで調整）
 
     p.push();
     p.translate(cx, cy);
@@ -813,49 +806,48 @@ const sketch = (p) => {
     const gridSteps = 3;
     for (let i = 1; i <= gridSteps; i++) {
       const r = (maxRadius / gridSteps) * i;
-      p.circle(0, 0, r * 2);
+    //   p.circle(0, 0, r * 2);
     }
 
-    // 軸線 + ラベル + ラベル背後サークル
+    // 軸線 + ラベル背後サークル
     p.textAlign(p.CENTER, p.CENTER);
     p.textSize(30);
 
     majors.forEach((name, i) => {
-      const angle = -p.HALF_PI + (p.TWO_PI * i) / majors.length; // 上方向から時計回り
+      const angle = -p.HALF_PI + (p.TWO_PI * i) / majors.length;
       const xAxis = Math.cos(angle) * maxRadius;
       const yAxis = Math.sin(angle) * maxRadius;
 
       // 軸線
       p.stroke(0, 0, 80, 0.5);
-      p.line(0, 0, xAxis, yAxis);
+    //   p.line(0, 0, xAxis, yAxis);
 
-      // このメジャーカテゴリの「スムージング後のレベル」
-      const level = levels[i]; // 0〜1
+      const level = levels[i]; // 0〜1（エネルギーに対応）
+
+      // ★ 見た目用レベル：
+      //    数値は0でも、見た目は minVisualLevel から始まる
+      const visualLevel = minVisualLevel + (1 - minVisualLevel) * level;
 
       // ラベル位置（軸の少し外側）
       const labelR = maxRadius + 40;
       const lx = Math.cos(angle) * labelR;
       const ly = Math.sin(angle) * labelR;
 
-      // レベルが 0 ならサークルも描かない（完全に無音の場合）
-      if (level > 0) {
-        // レベルが小さくても「線」にならないように、見た目の最低値を持たせる
-        const visualLevel = p.map(level, 0, 1, 0.3, 1); // 0.3〜1 に圧縮
-        const circleR = p.lerp(minCircleR, maxCircleR, visualLevel);
-        const hue = CATEGORY_COLORS[name] ?? 0;
+      const circleR = p.lerp(minCircleR, maxCircleR, visualLevel);
+      const hue = CATEGORY_COLORS[name] ?? 0;
 
-        p.noStroke();
-        p.fill(hue, 80, 100, 0.15);  // HSB: hueをカテゴリ色から取得
-        p.circle(lx, ly, circleR * 2);
-      }
+      p.noStroke();
+      p.fill(hue, 100, 100, 0.2);
+      p.circle(lx, ly, circleR * 2);
 
-      // テキスト（サークルの上 or 単独で描画）
-      p.fill(0, 0, 100, 0.95);
-      p.text(name, lx, ly);
+      // ラベルを出したければここを戻す
+      // p.fill(0, 0, 100, 0.95);
+      // p.text(name, lx, ly);
     });
 
-    // ⑤ レーダーポリゴン（ここでもレベルを使用）
-    p.stroke(210, 80, 100, 0.9);
+    // ⑤ レーダーポリゴン
+    // p.stroke(210, 80, 100, 0.9);
+    p.noStroke();
     p.fill(210, 80, 100, 0.25);
 
     p.beginShape();
@@ -863,11 +855,8 @@ const sketch = (p) => {
       const angle = -p.HALF_PI + (p.TWO_PI * i) / majors.length;
       const level = levels[i]; // 0〜1
 
-      let plotLevel = 0;
-      if (level > 0) {
-        // 0 では描かない、それ以外は最低 0.3 から描く
-        plotLevel = p.map(level, 0, 1, 0.3, 1);
-      }
+      // レーダー上でも同じく 0〜1 → minVisualLevel〜1 へ
+      const plotLevel = minVisualLevel + (1 - minVisualLevel) * level;
 
       const r = plotLevel * maxRadius;
       const x = Math.cos(angle) * r;
