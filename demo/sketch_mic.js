@@ -25,7 +25,7 @@ const sketch = (p) => {
     Water: ["Ocean", "Water", "Stream", "Water tap, faucet"],
     Atmosphere: ["Thunderstorm", "Wind", "Fire", "Typing", "Cutlery, silverware"],
     Traffic: ["Aircraft", "Car", "Rail transport", "Conversation"],
-    Music: ["Drum machine", "Percussion", "Synthesizer", "Music", "Hands"],
+    Music: ["Drum machine", "Percussion", "Synthesizer", "Hands"],
   };
 
   const CATEGORY_COLORS = {
@@ -196,9 +196,9 @@ const sketch = (p) => {
       const spectrum = fft.analyze();        // ★ ここで配列を取得
       lastSpectrum = spectrum;               // ★ グローバルに保持
       bassLevel =
-        p.map(fft.getEnergy("bass"), 0, 255, 0, 1) +
-        p.map(fft.getEnergy("mid"), 0, 255, 0, 1) +
-        p.map(fft.getEnergy("treble"), 0, 255, 0, 1);
+        p.map(fft.getEnergy("bass"), 0, 255, 0, 4) +
+        p.map(fft.getEnergy("mid"), 0, 255, 0, 4) +
+        p.map(fft.getEnergy("treble"), 0, 255, 0, 4);
     } else {
       bassLevel *= 0.95;
     }

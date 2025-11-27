@@ -2,13 +2,81 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Index Page</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>デモ一覧</title>
+    <style>
+        body {
+            font-family: "Arial", "Hiragino Sans", "メイリオ", sans-serif;
+            background: #f5f7fa;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 25px;
+            font-size: 1.8rem;
+        }
+
+        .container {
+            max-width: 480px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            padding: 18px 20px;
+            margin-bottom: 18px;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+        }
+
+        .card a {
+            text-decoration: none;
+            color: #007aff;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .subtitle {
+            font-size: 0.9rem;
+            color: #666;
+            margin-top: 6px;
+        }
+    </style>
 </head>
 <body>
-    <h1>サンプルページ</h1>
-    <p><a href="demo/index.html">3Dのデモへ移動</a></p>
-    <p><a href="demo/index_ios.html">2Dのデモへ移動</a></p>
-    <p><a href="demo/index_ios_Rader.html">2D+チャートのデモへ移動</a></p>
-    <p><a href="demo/index_mic.html">mic_inputのデモへ移動</a></p>
+    <h1>デモページ一覧</h1>
+
+    <div class="container">
+
+        <div class="card">
+            <a href="demo/index.html">3Dのデモへ移動</a>
+            <div class="subtitle">ブラウザで3D描画を体験できます</div>
+        </div>
+
+        <div class="card">
+            <a href="demo/index_ios.html">2Dのデモへ移動</a>
+            <div class="subtitle">軽量な2D描画デモ</div>
+        </div>
+
+        <div class="card">
+            <a href="demo/index_ios_Rader.html">2D＋チャートのデモへ移動</a>
+            <div class="subtitle">レーダーチャート付きの描画機能</div>
+        </div>
+
+        <div class="card">
+            <a href="demo/index_mic.html">mic_inputのデモへ移動</a>
+            <div class="subtitle">マイク入力の測定・解析デモ</div>
+        </div>
+
+    </div>
 </body>
 </html>
