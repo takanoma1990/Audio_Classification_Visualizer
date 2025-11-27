@@ -20,7 +20,7 @@ html, body {
   display: block;
   width: 100%;
   height: 100%;
-  filter: blur(1px) brightness(180%) contrast(120%);
+  filter: blur(4px) brightness(180%) contrast(120%);
 }
 
 /* ▼ アイコンだけを描くオーバーレイ canvas（フィルタ無し） */
